@@ -35,33 +35,56 @@ class QdrantRepository:
         documents: List of dictionaries
         Example: [{"text": "Machine learning is...", "metadata": {"tenant_id": 123}}]
         """
-        points = []
-        
-        # Extract texts from documents
-        texts = [doc["text"] for doc in documents]
-        
-        print("[⏳] Generating Dense & Sparse embeddings...")
-        
-        # Generate embeddings (Dense + Sparse)
+        if not documents:
+            return
+
+        # extract point IDs from incoming documents to check for duplicates
+        point_ids = [doc.get("id") for doc in documents]
+
+        # 2. 
+        # Retrieve existing points from Qdrant to check for duplicates (based on IDs)
+        try:
+            existing_points = self.client.retrieve(
+                collection_name=collection_name,
+                ids=point_ids,
+                with_payload=False,
+                with_vectors=False
+            )
+            # Create a set of existing IDs for O(1) lookups
+            existing_ids = {point.id for point in existing_points}
+        except Exception as e:
+            print(f"[⚠️] Error checking existing IDs: {e}")
+            existing_ids = set()
+
+        # 3. Filter out documents that already exist in Qdrant to avoid redundant embeddings
+        new_documents = [doc for doc in documents if doc.get("id") not in existing_ids]
+
+        # 4. If no new documents, skip embedding and insertion to save resources
+        if not new_documents:
+            print(f"[✅] All {len(documents)} chunks already exist in Qdrant. Skipping embedding to save resources.")
+            return
+
+        print(f"[⏳] Found {len(new_documents)} new chunks out of {len(documents)}. Generating embeddings...")
+
+        # 5. Generate Dense and Sparse embeddings for new documents only
+        texts = [doc["text"] for doc in new_documents]
         dense_vectors = self.dense_model.embed_documents(texts)
         sparse_vectors = list(self.sparse_model.embed(texts)) 
-        
-        # Build Qdrant points
-        for i in range(len(documents)):
-            point_id = str(uuid.uuid4())  # Unique ID for each document
+
+        points = []
+        for i in range(len(new_documents)):
+            point_id = new_documents[i].get("id")
             
-            # Payload must match retriever configuration
             payload = {
-                "content": documents[i]["text"],       # content_payload_key="content"
-                "payload": documents[i]["metadata"]    # metadata_payload_key="payload"
+                "content": new_documents[i]["text"],       
+                "payload": new_documents[i]["metadata"]    
             }
             
-            # Vectors split into dense + sparse
             vector = {
                 "dense": dense_vectors[i],
                 "sparse": {
-                    "indices": sparse_vectors[i].indices.tolist(), # Convert to list
-                    "values": sparse_vectors[i].values.tolist()    # Convert to list
+                    "indices": sparse_vectors[i].indices.tolist(),
+                    "values": sparse_vectors[i].values.tolist()
                 }
             }
             
@@ -69,12 +92,12 @@ class QdrantRepository:
                 PointStruct(id=point_id, payload=payload, vector=vector)
             )
 
-        # Upsert points into Qdrant
+        # 6. Insert new points into Qdrant
         self.client.upsert(
             collection_name=collection_name,
             points=points
         )
-        print(f"[✅] {len(points)} Hybrid documents added to '{collection_name}'.")
+        print(f"[✅] {len(points)} NEW Hybrid documents added to '{collection_name}'.")
 
     def delete_collection(self, collection_name: str):
         # Delete collection if exists

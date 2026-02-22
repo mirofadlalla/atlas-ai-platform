@@ -38,7 +38,7 @@ def get_retriever(tenant_id: int):
 
     return vectorstore.as_retriever(
         search_kwargs={
-            "k": 2,
+            "k": 5,
             "filter": models.Filter(
                 must=[
                     models.FieldCondition(
@@ -58,3 +58,4 @@ def get_retriever(tenant_id: int):
 #     for i, doc in enumerate(relevant_docs):
 #         print(f"Doc {i+1}: {doc.page_content}")
 #         print(f"Metadata: {doc.metadata}\n")
+

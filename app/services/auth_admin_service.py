@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 from app.schema.auth_admin import UserCreate
 from fastapi import HTTPException, status
 
-from repositories.user_repository import UserRepository
-from repositories.tenant_repository import TenantRepository
+from app.repositories.user_repository import UserRepository
+from app.repositories.tenant_repository import TenantRepository
 
 from app.services.hash_service import password_hash, verify_password
 from app.services.token_service import create_access_token

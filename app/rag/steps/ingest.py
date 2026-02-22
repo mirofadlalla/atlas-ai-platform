@@ -22,11 +22,20 @@ def main(text : str , my_metadata : dict):
 
     data_to_insert = []
     for doc in chunks_with_metadata:
+        
+        # Generate a stable chunk ID based on the content and metadata
+        chunk_id = SemanticChunkingFunction.generate_chunk_id(
+            text=doc.page_content,
+            tenant_id=my_metadata["tenant_id"],
+            source=my_metadata["source"]
+        )
+        
         data_to_insert.append({
+            "id": chunk_id,
             "text": doc.page_content,
             "metadata": doc.metadata
         })
-
+        
     repo.add_hybrid_documents(COLLECTION_NAME, data_to_insert)
 
 # if __name__ == "__main__":

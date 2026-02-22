@@ -4,8 +4,8 @@ from app.schema.auth_admin import UserCreate
 from app.core.auth import password_hash, create_access_token
 from fastapi import HTTPException, status
 
-from repositories.user_repository import UserRepository
-from repositories.tenant_repository import TenantRepository
+from app.repositories.user_repository import UserRepository
+from app.repositories.tenant_repository import TenantRepository
 
 
 class TenantService:

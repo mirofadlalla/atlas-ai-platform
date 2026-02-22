@@ -1,10 +1,17 @@
-from app.design_pattern.embedded_model import EmbeddedModel
+import hashlib
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
 
+from app.models.uuid import uuid_pk
+
 class SemanticChunkingFunction:
+    
     @staticmethod
     def process_document(text: str, metadata: dict):
+        # Lazy import of heavy embedding model - only loaded when actually processing
+        from app.design_pattern.embedded_model import EmbeddedModel
+        
         token_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=50
@@ -20,6 +27,18 @@ class SemanticChunkingFunction:
 
         final_docs = semantic_splitter.split_documents(initial_docs)
         return final_docs
+
+    @staticmethod
+    def generate_chunk_id(text: str, tenant_id: int, source: str) -> str:
+        """
+        Generate a stable chunk ID based on the content and metadata.
+        This ensures that the same chunk will always get the same ID, which helps with deduplication and tracking.
+        """
+        unique_string = f"{tenant_id}_{source}_{text}"
+        
+        hash_object = hashlib.md5(unique_string.encode('utf-8'))
+        print(f"Generated chunk ID: {hash_object.hexdigest()} for tenant_id: {tenant_id}, source: {source}")
+        return str(hash_object.hexdigest())
 
 
 

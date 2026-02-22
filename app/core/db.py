@@ -21,3 +21,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_db_session():
+    """
+    Returns a new database session directly (not a generator).
+    Use this in Celery tasks or other background processes.
+    """
+    db = Sessions()
+    try:
+        return db
+    except Exception:
+        db.close()
+        raise
