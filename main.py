@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 # from contextlib import asynccontextmanager
 
-from app.routes import auth_route, ingest_rag_route
+from app.routes import auth_route, ingest_rag_route, eval_pipline
 # from app.design_pattern.embedded_model import EmbeddedModel
-
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -17,6 +16,7 @@ from app.routes import auth_route, ingest_rag_route
 
 #     print("Models Closed Successfully ...")
 
+import mlflow
 
 app = FastAPI(
     title="Atlas AI Platform",
@@ -27,3 +27,4 @@ app = FastAPI(
 
 app.include_router(auth_route.router, tags=["Authentication"])
 app.include_router(ingest_rag_route.router, tags=["ingest-rag"])
+app.include_router(eval_pipline.router, tags=["eval-rag"])

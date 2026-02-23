@@ -38,7 +38,7 @@ def get_retriever(tenant_id: int):
 
     return vectorstore.as_retriever(
         search_kwargs={
-            "k": 5,
+            "k": 1,
             "filter": models.Filter(
                 must=[
                     models.FieldCondition(

@@ -120,3 +120,25 @@ class QdrantRepository:
             limit=top_k
         )
         return results
+    
+    # get all points in a collection (for debugging or evaluation purposes)
+    def get_all_points(self, collection_name: str):
+        try:
+            points = self.client.retrieve(
+                collection_name=collection_name,
+                with_payload=True,
+                with_vectors=False
+            )
+            return points
+        except Exception as e:
+            print(f"[⚠️] Error retrieving points: {e}")
+            return []
+        
+
+# ps = QdrantRepository()
+# points = ps.get_all_points("atlas_documents1")
+# print(f"Total points in collection: {len(points)}")
+
+# print("Sample point:", points[0] if points else "No points found")
+
+
