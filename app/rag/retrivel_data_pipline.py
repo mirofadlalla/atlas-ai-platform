@@ -7,6 +7,11 @@ from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain 
 from langchain_classic.prompts import ChatPromptTemplate
 
+import time
+
+from app.models.runs import Runs
+from app.models.costLog import CostLog
+
 # Setup paths
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -56,12 +61,58 @@ class RetrievalPipeline:
         response = self.qa_chain.stream({"input": query})
         return response
     
-    # 
     def ask_stream(self, query: str):
-        # use stream instead of invoke
+        """
+        Stream the answer to a query with logging of run and cost information.
+        
+        This method:
+        1. Streams the answer chunks from the QA chain
+        2. Tracks latency and token usage
+        3. Logs run and cost information to the database
+        """
+        start_time = time.time()
+        full_answer = ""
+        
+        # 1. Stream the QA chain response
         for chunk in self.qa_chain.stream({"input": query}):
             if "answer" in chunk:
+                full_answer += chunk["answer"]
                 yield chunk["answer"]
+
+        # 2. Calculate metrics after streaming completes
+        latency = time.time() - start_time
+        usage = CustomLocalLLM.last_usage  # Extract token usage from the model
+        
+        # 3. Save to database (SQLAlchemy)
+        try:
+            new_run = Runs(
+                tenant_id=self.tenant_id,
+                query=query,
+                answer=full_answer,
+                latency=latency,
+                cache_hit=False,  # SemanticCache controls this, default to False for now
+                retrieved_docs_ids=",".join([doc.metadata.get('_id', '') for doc in self.retriever.invoke(query)])
+            )
+            
+            # Calculate cost (example: Qwen 2.5 1.5B pricing)
+            # For local models, cost is 0; for API models, calculate accordingly
+            cost = (usage.get("input", 0) * 0.0000001) + (usage.get("output", 0) * 0.0000002) 
+
+            new_cost = CostLog(
+                run=new_run,  # Automatic linking via SQLAlchemy relationship
+                input_tokens=usage.get("input", 0),
+                output_tokens=usage.get("output", 0),
+                model_name="Qwen2.5-1.5B",
+                cost_usd=cost
+            )
+            
+            # TODO: Uncomment when database session is available
+            # session.add(new_run)
+            # session.commit()
+            print(f"\n[Logged] Run saved with {usage.get('total_tokens')} total tokens.")
+            
+        except Exception as e:
+            print(f"Error logging to DB: {e}")
 
     @property
     def _llm_type(self) -> str:

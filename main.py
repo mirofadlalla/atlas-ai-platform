@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from app.routes import auth_route, ingest_rag_route, eval_pipline
+from app.routes import auth_route, ingest_rag_route, eval_pipline, query_route
 # from app.design_pattern.embedded_model import EmbeddedModel
 
 # @asynccontextmanager
@@ -28,3 +28,4 @@ app = FastAPI(
 app.include_router(auth_route.router, tags=["Authentication"])
 app.include_router(ingest_rag_route.router, tags=["ingest-rag"])
 app.include_router(eval_pipline.router, tags=["eval-rag"])
+app.include_router(query_route.router, tags=["query"])

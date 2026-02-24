@@ -118,24 +118,24 @@ class LLMService:
             "total_tokens": completion.usage.total_tokens
         }
     
-    def generate_stream(
-        self,
-        prompt: str,
-        max_new_tokens: int = 512,
-        temperature: float = 0.1,
-    ):
-        # تفعيل stream=True في الـ API call
+    def generate_stream(self, prompt: str, system_prompt: str = "", max_new_tokens: int = 512):
         stream = self.client.chat.completions.create(
             model=self.model,
             messages=[
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=max_new_tokens,
-            temperature=temperature,
-            stream=True # enable streaming responses
+            stream=True,
+            stream_options={"include_usage": True}
         )
         
+        usage_data = {"input": 0, "output": 0}
         for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content # return each chunk of content as it arrives
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content, None
+            
+            if chunk.usage:
+                usage_data["input"] = chunk.usage.prompt_tokens
+                usage_data["output"] = chunk.usage.completion_tokens
+                yield None, usage_data

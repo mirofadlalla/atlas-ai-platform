@@ -48,32 +48,26 @@ from typing import Iterator
 
 # transform the call_llama function into a custom LLM class that can be used with LangChain
 class CustomLocalLLM(LLM):
-    def _call(
-        self,
-        prompt: str,
-        # system_prompt : str,
-        **kwargs: Any,
-    ) -> str:
-        # Here we ignore stop and run_manager for simplicity, but they could be integrated if needed
-        response = call_llama(prompt)
-        return response['content']
-    
-    def _stream(
-        self,
-        prompt: str,
-        # system_prompt : str = '',
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    )-> Iterator[GenerationChunk]: 
-        llm = LLMService()
+    last_usage: dict = {} # مخزن مؤقت لآخر عملية
 
-        for chunk_text in llm.generate_stream(prompt):
-            chunk = GenerationChunk(text=chunk_text)
-            if run_manager:
-                run_manager.on_llm_new_token(chunk.text)
-            yield chunk 
+    def _stream(self, prompt: str, run_manager=None, **kwargs) -> Iterator[GenerationChunk]:
+        llm = LLMService()
+        for content, usage in llm.generate_stream(prompt):
+            if content:
+                chunk = GenerationChunk(text=content)
+                if run_manager:
+                    run_manager.on_llm_new_token(chunk.text)
+                yield chunk
+            if usage:
+                # بنحفظ الأرقام هنا عشان الـ Pipeline يسحبها
+                CustomLocalLLM.last_usage = usage
+
+    def _call(self, prompt: str, **kwargs) -> str:
+        # Normal Method using invoke
+        llm = LLMService()
+        res = llm.generate(prompt, system_prompt="")
+        return res['content']
 
     @property
     def _llm_type(self) -> str:
-        return "custom_local_qwen"
+        return "custom_huggingface_stream"
