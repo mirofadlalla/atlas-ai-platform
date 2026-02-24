@@ -15,6 +15,7 @@ class EvalPipeline:
     def __init__(self, path: Path, tenant_id: str): 
         self.tenant_id = tenant_id
         self.data = self._get_json_file(path)
+        
 
         # 1. Setup Retriever
         self.retriever = get_retriever(tenant_id=self.tenant_id)

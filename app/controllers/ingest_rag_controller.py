@@ -7,7 +7,7 @@ class IngestController:
     '''
     @staticmethod
     def ingest_file(file_path: str, tenant_id: int, source: str, author: str, db: Session):
-        from app.services.ingest_rag_service import ingest_file_task
+        from app.services.rag_services.ingest_rag_service import ingest_file_task
 
         try:
             # send task to Celery with proper error handling

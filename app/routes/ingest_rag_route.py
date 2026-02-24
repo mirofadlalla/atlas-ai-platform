@@ -4,7 +4,7 @@ from app.core.db import get_db
 from sqlalchemy.orm import Session
 # from app.rag.ingest_data_pipline import RAGPipeline
 
-from app.services.path_processing_service import PathProcessingService
+from app.services.rag_services.path_processing_service import PathProcessingService
 
 from app.design_pattern.upload_factory import process_upload
 

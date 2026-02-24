@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-# from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 
 from app.routes import auth_route, ingest_rag_route, eval_pipline
 # from app.design_pattern.embedded_model import EmbeddedModel
@@ -16,7 +16,7 @@ from app.routes import auth_route, ingest_rag_route, eval_pipline
 
 #     print("Models Closed Successfully ...")
 
-import mlflow
+# import mlflow
 
 app = FastAPI(
     title="Atlas AI Platform",

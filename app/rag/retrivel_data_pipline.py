@@ -1,33 +1,72 @@
 import os
 import sys
 from pathlib import Path
+import langchain
+from langchain_redis import RedisSemanticCache
+from langchain_classic.chains import create_retrieval_chain 
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain 
+from langchain_classic.prompts import ChatPromptTemplate
 
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["HF_HUB_DISABLE_IMPLICIT_SYMLINKS"] = "1"
-
+# Setup paths
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-
 from app.rag.steps.retriever import get_retriever
-
+from app.services.llm_runner import CustomLocalLLM
+from app.design_pattern.embedded_model import EmbeddedModel # Ensure it's LangChain compatible
 
 class RetrievalPipeline:
-    '''
-    A simple retrieval pipeline that initializes a retriever 
-    for a given tenant_id and allows you to retrieve 
-    relevant documents based on a query.
-    '''
     def __init__(self, tenant_id: int):
         self.retriever = get_retriever(tenant_id)
+        
+        # 1. Define the embedding model (Object)
+        # Use the same instance so Redis can use it for similarity comparison
+        self.embedding_model = EmbeddedModel() 
+
+        # 2. Setup Redis Semantic Cache (initialized once at load time)
+        langchain.llm_cache = RedisSemanticCache(
+            redis_url="redis://localhost:6379:0",
+            embeddings=self.embedding_model,
+            ttl=86400, # one day
+            distance_threshold=0.2
+        )
+        
+        # 3. Setup Local LLM and Chain
+        self.local_llm = CustomLocalLLM()
+        
+        prompt = ChatPromptTemplate.from_template(
+            "Answer the following question based only on the provided context:\n\n"
+            "Context: {context}\n\n"
+            "Question: {input}\n\n"
+            "Answer:"
+        )
+        
+        self.document_chain = create_stuff_documents_chain(self.local_llm, prompt)
+        self.qa_chain = create_retrieval_chain(self.retriever, self.document_chain)
 
     def retrieve(self, query: str):
+        """Direct access to the Retriever without LLM"""
         return self.retriever.invoke(query)
+    
+    def ask(self, query: str):
+        """
+        Answer the question using the Cache and the local LLM.
+        If the question is similar to a previous one stored in Redis, it will respond immediately.
+        """
+        # invoke automatically triggers the cache behind the scenes
+        response = self.qa_chain.stream({"input": query})
+        return response
+    
+    # 
+    def ask_stream(self, query: str):
+        # use stream instead of invoke
+        for chunk in self.qa_chain.stream({"input": query}):
+            if "answer" in chunk:
+                yield chunk["answer"]
 
-
-
-
-
-
+    @property
+    def _llm_type(self) -> str:
+        return "custom_huggingface_stream"
+    
 
 # retrieval_pipeline = RetrievalPipeline(tenant_id="1234")
 # retrieved_docs = retrieval_pipeline.retrieve("What was the effective tax rate for the year ended December 31, 2023, following the IRS rule change regarding foreign tax credits?")
@@ -37,3 +76,22 @@ class RetrievalPipeline:
 
 # for doc in retrieved_docs:
 #     print(doc.metadata['_id'])  # Print the first 200 characters of each retrieved document
+
+
+
+# if __name__ == "__main__":
+#     pipeline = RetrievalPipeline(tenant_id="1234")
+    
+#     query = "What level in the fair value hierarchy do debt securities get classified in?"
+    
+#     # connect to Redis : First call will compute the answer and store it in Redis it will take 
+#     # result1 = pipeline.ask(query)
+#     # print(result1, end="", flush=True)
+
+#     for chunk in pipeline.ask_stream(query):
+#         print(chunk , end="" , flush=True)
+    
+#     print("--- Second Call (Cached from Redis) ---")
+#     for chunk in pipeline.ask_stream(query):
+#         print(chunk, end="", flush=True)
+#     print("\n")

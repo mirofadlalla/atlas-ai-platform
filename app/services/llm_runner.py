@@ -11,7 +11,7 @@ def call_llama(
     temperature: float = 0.2
 ):
     """
-    Call the LLM (via HuggingFace Inference Client) to generate a response.
+    Call the Local LLM to generate a response.
     
     Args:
         prompt: The user prompt to send to the model
@@ -29,14 +29,51 @@ def call_llama(
             system_prompt=system_prompt,
             temperature=temperature
         )
-        
-        # Estimate token counts (rough approximation)
-        input_tokens = len(prompt.split())
-        output_tokens = len(output.split())
-        
-        logger.info(f"LLM call successful. Input tokens: {input_tokens}, Output tokens: {output_tokens}")
-        return output, input_tokens, output_tokens
+        # generate() now returns a plain str; token counts are not available via the API
+        logger.info("LLM call successful.")
+        return output
     except Exception as e:
         print(f"Error calling LLM: {str(e)}")
         logger.error(f"Error calling LLM: {str(e)}", exc_info=True)
         raise
+
+
+
+from typing import Any, List, Optional
+from langchain_core.language_models.llms import LLM
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+
+from langchain_core.outputs import GenerationChunk
+from typing import Iterator
+
+# transform the call_llama function into a custom LLM class that can be used with LangChain
+class CustomLocalLLM(LLM):
+    def _call(
+        self,
+        prompt: str,
+        # system_prompt : str,
+        **kwargs: Any,
+    ) -> str:
+        # Here we ignore stop and run_manager for simplicity, but they could be integrated if needed
+        response = call_llama(prompt)
+        return response['content']
+    
+    def _stream(
+        self,
+        prompt: str,
+        # system_prompt : str = '',
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    )-> Iterator[GenerationChunk]: 
+        llm = LLMService()
+
+        for chunk_text in llm.generate_stream(prompt):
+            chunk = GenerationChunk(text=chunk_text)
+            if run_manager:
+                run_manager.on_llm_new_token(chunk.text)
+            yield chunk 
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom_local_qwen"

@@ -1,4 +1,4 @@
-from app.services.eval_pipline import evaluate_task
+from app.services.rag_services.eval_pipline import evaluate_task
 
 import mlflow
 import os
@@ -6,6 +6,10 @@ import os
 from fastapi import APIRouter, UploadFile, File, Form
 from pathlib import Path
 
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from app.schema.query_request import QueryRequest
+from app.rag.retrivel_data_pipline import RetrievalPipeline # تأكد من مسار الكلاس بتاعك
 
 
 router = APIRouter(
@@ -49,8 +53,24 @@ async def evaluate(
     
 
 # Endpoint to check the status of the evaluation task
-router.get("/status/{task_id}")
+@router.get("/status/{task_id}")
 async def get_status(task_id: str):
     from app.celery.celery_config import celery_app
     task_result = celery_app.AsyncResult(task_id)
     return {"task_id": task_id, "status": task_result.status}
+
+
+@router.post("/ask")
+async def ask_question(request: QueryRequest):
+    '''
+    Endpoints that returns the answer with streaming
+    '''
+
+    try :
+        pipeline = RetrievalPipeline(tenant_id="1234") # HardCoded For now
+        answer = pipeline.ask_stream(query=request.query)
+        
+        return StreamingResponse(answer, media_type="text/plain")
+    
+    except Exception as e :
+         raise HTTPException(status_code=500, detail=str(e))
