@@ -1,0 +1,137 @@
+/* App.css - Main Application Wrapper */
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg-base);
+}
+
+.app-content {
+  flex: 1;
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Loading Screen */
+.loading-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--gradient-header);
+  color: var(--text-primary);
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.loading-spinner {
+  display: inline-block;
+  margin-right: 10px;
+  animation: spin 1s linear infinite;
+  font-size: 2em;
+}
+
+/* Global Error Boundary */
+.error-boundary {
+  padding: 40px 20px;
+  background: var(--gradient-header);
+  min-height: 100vh;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #FCA5A5;
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-lg);
+  animation: slideDown var(--transition-base) ease-out;
+}
+
+.success-message {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #86EFAC;
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-lg);
+  animation: slideDown var(--transition-base) ease-out;
+}
+
+.error-boundary h1 {
+  font-size: 2.5em;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.error-boundary p {
+  font-size: 1.1em;
+  margin: 10px 0;
+  opacity: 0.8;
+}
+
+.error-boundary button {
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 20px;
+  transition: all 0.3s;
+}
+
+.error-boundary button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(124, 58, 237, 0.3);
+}
+
+/* Page Transitions */
+.page-enter {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Layout for pages with navigation */
+.with-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.with-nav > nav {
+  flex-shrink: 0;
+}
+
+.with-nav > main {
+  flex: 1;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

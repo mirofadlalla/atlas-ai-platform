@@ -47,6 +47,9 @@ class AuthService:
         # Generate token
         access_token = create_access_token({
             "sub": new_user.email, 
+            "user_id": new_user.id,
+            "role": new_user.role,
+            "approval_status": new_user.approval_status,
             "tenant_id": tenant_obj.id
         })
         
@@ -67,6 +70,9 @@ class AuthService:
         
         access_token = create_access_token({
             "sub": user.email, 
+            "user_id": user.id,
+            "role": user.role,
+            "approval_status": user.approval_status,
             "tenant_id": user.tenant_id
         })
         

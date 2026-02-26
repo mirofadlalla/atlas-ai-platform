@@ -2,10 +2,12 @@
 Authentication and authorization routes.
 
 Handles user registration, login, invitation management, and admin approval workflows.
+Also handles multi-tenant SaaS registration for new organizations.
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.schema.auth_admin import UserCreate, Token, UserLogin
 from app.schema.invitation_requests import (
@@ -32,6 +34,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/auth"
 )
+
+
+# ==================== Tenant Registration (SaaS) ====================
+
+from app.schema.tenant_schema import TenantRegistrationRequest, TenantRegistrationResponse
+
+
+@router.post("/tenant/register", response_model=TenantRegistrationResponse)
+def register_tenant(request: TenantRegistrationRequest, db: Session = Depends(get_db)):
+    from app.services.tenant_registration_service import TenantRegistrationService
+    """
+    Register a new tenant (SaaS admin registration).
+    Creates organization and first admin user.
+    
+    This endpoint allows new organizations to create their own Atlas AI workspace.
+    
+    Args:
+        request: Tenant and admin registration data
+        db: Database session
+        
+    Returns:
+        Tenant ID, admin user token, and access information
+        
+    Raises:
+        HTTPException: If organization or email already exists
+    """
+    service = TenantRegistrationService(db)
+    return service.register_tenant(request)
 
 
 # ==================== Basic Authentication ====================
@@ -77,14 +107,9 @@ def get_my_profile(current_user=Depends(get_current_user)):
     Returns:
         User profile data
     """
-    return {
-        "id": current_user.id,
-        "name": current_user.name,
-        "email": current_user.email,
-        "tenant_id": current_user.tenant_id,
-        "role": current_user.role,
-        "approval_status": current_user.approval_status
-    }
+    from app.services.user_profile_service import UserProfileService
+    service = UserProfileService()
+    return service.get_profile(current_user)
 
 
 # ==================== Invitation Management ====================
@@ -92,8 +117,8 @@ def get_my_profile(current_user=Depends(get_current_user)):
 @router.post("/invitations/send")
 def send_invitation(
     request: SendInvitationRequest,
-    current_user: str = Header(...),
-    user_role: str = Header(...),
+    current_user: str = Header(..., alias="current-user"),
+    user_role: str = Header(..., alias="user-role"),
     db: Session = Depends(get_db)
 ):
     """
@@ -107,59 +132,33 @@ def send_invitation(
         
     Returns:
         Invitation details with token
-        
-    Raises:
-        HTTPException: If user is not admin
     """
-    # Verify admin role
-    if user_role != "admin":
-        logger.warning(f"Unauthorized invitation attempt by {current_user}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can send invitations"
-        )
+    import re
+    from app.services.user_approval_service import UserApprovalService
+    from app.services.invitation_management_service import InvitationManagementService
     
-    # Apply rate limiting
-    rate_limit(
-        user_id=current_user,
-        role="admin",
-        endpoint="/auth/invitations/send"
-    )
+    # Trim whitespace from headers
+    current_user = current_user.strip() if current_user else current_user
+    user_role = user_role.strip() if user_role else user_role
     
-    try:
-        invitation_service = InvitationService(db)
-        
-        invitation = invitation_service.send_invitation(
-            invited_email=request.invited_email,
-            invited_by_id=current_user,
-            tenant_id=request.tenant_id
-        )
-        
-        logger.info(
-            f"Invitation sent to {request.invited_email} by admin {current_user}"
-        )
-        
-        return {
-            "invitation_id": invitation.invitation_id,
-            "invited_email": invitation.invited_email,
-            "token": invitation.token,
-            "status": invitation.status,
-            "created_at": invitation.created_at,
-            "expires_at": invitation.expires_at
-        }
-        
-    except ValueError as e:
-        logger.error(f"Error sending invitation: {e}")
+    # Validate that current_user is a UUID, not an email
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    if '@' in current_user or not uuid_pattern.match(current_user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=f"Invalid user ID format. Expected UUID, got: {current_user[:50]}. Please log out and log back in."
         )
-    except Exception as e:
-        logger.error(f"Error sending invitation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send invitation"
-        )
+    
+    approval_service = UserApprovalService(db)
+    approval_service.authorize_admin(user_role, "send invitation")
+    
+    invitation_service = InvitationManagementService(db)
+    return invitation_service.send_invitation(
+        invited_email=request.invited_email,
+        invited_by_id=current_user,
+        tenant_id=request.tenant_id,
+        admin_id=current_user
+    )
 
 
 @router.get("/invitations/validate")
@@ -176,28 +175,11 @@ def validate_invitation(
         
     Returns:
         Invitation details if valid
-        
-    Raises:
-        HTTPException: If invitation is invalid or expired
     """
-    try:
-        invitation_service = InvitationService(db)
-        details = invitation_service.get_invitation_details(token)
-        
-        if not details:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired invitation token"
-            )
-        
-        return details
-        
-    except Exception as e:
-        logger.error(f"Error validating invitation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to validate invitation"
-        )
+    from app.services.invitation_management_service import InvitationManagementService
+    
+    service = InvitationManagementService(db)
+    return service.validate_invitation(token)
 
 
 @router.post("/register-via-invitation")
@@ -208,79 +190,28 @@ def register_via_invitation(
     """
     Register a new user using an invitation token.
     
-    After registration, user status will be 'pending' if admin approval is required,
-    or 'approved' if immediate approval is configured.
-    
     Args:
         request: Registration request with invitation token and password
         db: Database session
         
     Returns:
         Access token for newly registered user
-        
-    Raises:
-        HTTPException: If invitation is invalid or registration fails
     """
-    try:
-        invitation_service = InvitationService(db)
-        
-        # Validate invitation
-        details = invitation_service.get_invitation_details(request.token)
-        if not details:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired invitation token"
-            )
-        
-        # Hash password
-        from app.services.hash_service import password_hash
-        password_hash_obj = password_hash(request.password)
-        
-        # Register user
-        user = invitation_service.accept_invitation_and_register(
-            token=request.token,
-            name=request.name,
-            password_hash=password_hash_obj,
-            tenant_id=request.tenant_id
-        )
-        
-        # Generate access token
-        from app.services.token_service import create_access_token
-        access_token = create_access_token({
-            "sub": user.email,
-            "tenant_id": user.tenant_id,
-            "role": user.role,
-            "approval_status": user.approval_status
-        })
-        
-        logger.info(f"User registered via invitation: {user.email}")
-        
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user_id": user.id,
-            "approval_status": user.approval_status,
-            "message": "Please await admin approval" if user.approval_status == "pending" else "Registration successful"
-        }
-        
-    except ValueError as e:
-        logger.error(f"Invalid invitation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Error registering via invitation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to register user"
-        )
+    from app.services.invitation_management_service import InvitationManagementService
+    
+    service = InvitationManagementService(db)
+    return service.register_via_invitation(
+        token=request.token,
+        name=request.name,
+        password=request.password,
+        tenant_id=request.tenant_id
+    )
 
 
 @router.get("/invitations/pending")
 def get_pending_invitations(
-    current_user: str = Header(...),
-    user_role: str = Header(...),
+    current_user: str = Header(..., alias="current-user"),
+    user_role: str = Header(..., alias="user-role"),
     db: Session = Depends(get_db)
 ):
     """
@@ -294,42 +225,34 @@ def get_pending_invitations(
     Returns:
         List of pending invitations
     """
-    if user_role != "admin":
+    import re
+    from app.services.user_approval_service import UserApprovalService
+    from app.services.invitation_management_service import InvitationManagementService
+    
+    # Trim whitespace from headers
+    current_user = current_user.strip() if current_user else current_user
+    user_role = user_role.strip() if user_role else user_role
+    
+    # Validate that current_user is a UUID, not an email
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+    if '@' in current_user or not uuid_pattern.match(current_user):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can view invitations"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid user ID format. Expected UUID, got: {current_user[:50]}. Please log out and log back in."
         )
     
-    try:
-        invitation_service = InvitationService(db)
-        invitations = invitation_service.get_pending_invitations_for_admin(current_user)
-        
-        return {
-            "total": len(invitations),
-            "invitations": [
-                {
-                    "invitation_id": inv.invitation_id,
-                    "invited_email": inv.invited_email,
-                    "status": inv.status,
-                    "created_at": inv.created_at,
-                    "expires_at": inv.expires_at
-                }
-                for inv in invitations
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error retrieving pending invitations: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve invitations"
-        )
+    approval_service = UserApprovalService(db)
+    approval_service.authorize_admin(user_role, "view invitations")
+    
+    invitation_service = InvitationManagementService(db)
+    return invitation_service.get_pending_invitations(current_user)
 
 
 @router.post("/invitations/resend")
 def resend_invitation(
     request: ResendInvitationRequest,
-    current_user: str = Header(...),
-    user_role: str = Header(...),
+    current_user: str = Header(..., alias="current-user"),
+    user_role: str = Header(..., alias="user-role"),
     db: Session = Depends(get_db)
 ):
     """
@@ -344,41 +267,22 @@ def resend_invitation(
     Returns:
         New invitation token
     """
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can resend invitations"
-        )
+    from app.services.user_approval_service import UserApprovalService
+    from app.services.invitation_management_service import InvitationManagementService
     
-    try:
-        invitation_service = InvitationService(db)
-        new_token = invitation_service.resend_invitation(request.token)
-        
-        if not new_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot resend this invitation"
-            )
-        
-        return {
-            "success": True,
-            "new_token": new_token,
-            "message": "Invitation resent successfully"
-        }
-    except Exception as e:
-        logger.error(f"Error resending invitation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to resend invitation"
-        )
+    approval_service = UserApprovalService(db)
+    approval_service.authorize_admin(user_role, "resend invitation")
+    
+    invitation_service = InvitationManagementService(db)
+    return invitation_service.resend_invitation(request.token)
 
 
 # ==================== Admin Approval Workflow ====================
 
 @router.get("/pending-approvals")
 def get_pending_approvals(
-    current_user: str = Header(...),
-    user_role: str = Header(...),
+    current_user: str = Header(..., alias="current-user"),
+    user_role: str = Header(..., alias="user-role"),
     db: Session = Depends(get_db)
 ):
     """
@@ -392,38 +296,25 @@ def get_pending_approvals(
     Returns:
         List of pending users awaiting approval
     """
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can view pending approvals"
-        )
+    from app.services.user_approval_service import UserApprovalService
     
-    try:
-        user_repo = UserRepository(db)
-        # Get all pending users (this assumes a method exists or we query directly)
-        from app.models.user import Users
-        pending_users = db.query(Users).filter(
-            Users.approval_status == "pending"
-        ).all()
-        
-        return {
-            "total": len(pending_users),
-            "pending_users": [
-                {
-                    "user_id": u.id,
-                    "name": u.name,
-                    "email": u.email,
-                    "created_at": u.created_at
-                }
-                for u in pending_users
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error retrieving pending approvals: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve pending approvals"
-        )
+    service = UserApprovalService(db)
+    service.authorize_admin(user_role, "view pending approvals")
+    
+    pending_users = service.get_pending_approvals()
+    
+    return {
+        "total": len(pending_users),
+        "pending_users": [
+            {
+                "user_id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "created_at": u.created_at
+            }
+            for u in pending_users
+        ]
+    }
 
 
 @router.post("/approve-user/{user_id}")
@@ -445,49 +336,12 @@ def approve_user(
     Returns:
         Updated user status
     """
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can approve users"
-        )
+    from app.services.user_approval_service import UserApprovalService
     
-    try:
-        from app.models.user import Users
-        from datetime import datetime
-        
-        user = db.query(Users).filter(Users.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        if user.approval_status != "pending":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"User already {user.approval_status}"
-            )
-        
-        user.approval_status = "approved"
-        user.approved_by = current_user
-        user.approved_at = datetime.utcnow()
-        db.commit()
-        db.refresh(user)
-        
-        logger.info(f"User {user.email} approved by admin {current_user}")
-        
-        return {
-            "user_id": user.id,
-            "email": user.email,
-            "approval_status": user.approval_status,
-            "approved_at": user.approved_at
-        }
-    except Exception as e:
-        logger.error(f"Error approving user: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to approve user"
-        )
+    service = UserApprovalService(db)
+    service.authorize_admin(user_role, "approve user")
+    
+    return service.approve_user(user_id, current_user)
 
 
 @router.post("/reject-user/{user_id}")
@@ -509,46 +363,9 @@ def reject_user(
     Returns:
         Updated user status
     """
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can reject users"
-        )
+    from app.services.user_approval_service import UserApprovalService
     
-    try:
-        from app.models.user import Users
-        from datetime import datetime
-        
-        user = db.query(Users).filter(Users.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        if user.approval_status != "pending":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot reject user with status: {user.approval_status}"
-            )
-        
-        user.approval_status = "rejected"
-        user.approved_by = current_user
-        user.approved_at = datetime.utcnow()
-        db.commit()
-        db.refresh(user)
-        
-        logger.info(f"User {user.email} rejected by admin {current_user}")
-        
-        return {
-            "user_id": user.id,
-            "email": user.email,
-            "approval_status": user.approval_status,
-            "rejected_at": user.approved_at
-        }
-    except Exception as e:
-        logger.error(f"Error rejecting user: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to reject user"
-        )
+    service = UserApprovalService(db)
+    service.authorize_admin(user_role, "reject user")
+    
+    return service.reject_user(user_id, current_user)

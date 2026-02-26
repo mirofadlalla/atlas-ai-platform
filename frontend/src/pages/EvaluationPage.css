@@ -1,0 +1,215 @@
+.evaluation-page {
+  min-height: 100vh;
+  background: var(--bg-base);
+  padding: 40px 20px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.evaluation-header {
+  text-align: center;
+  color: var(--text-primary);
+  margin-bottom: 40px;
+  animation: slideUp 0.5s ease-out;
+}
+
+.evaluation-header h1 {
+  font-size: 2.5em;
+  margin: 0 0 10px 0;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.evaluation-header p {
+  font-size: 1.1em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.evaluation-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.evaluation-form {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 30px;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 30px;
+  animation: slideUp 0.5s ease-out 0.1s both;
+}
+
+.form-group {
+  margin-bottom: 25px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.form-group input[type="file"],
+.form-group input[type="number"],
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  font-size: 1em;
+  transition: all var(--transition-base);
+  font-family: inherit;
+}
+
+.form-group input[type="file"]::file-selector-button,
+.form-group input[type="file"]::placeholder,
+.form-group input[type="number"]::placeholder,
+.form-group select::placeholder {
+  color: var(--text-muted);
+}
+
+.form-group input[type="file"]:focus,
+.form-group input[type="number"]:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  background-color: var(--bg-tertiary);
+}
+
+.form-group small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: white;
+  padding: 12px 30px;
+  border: 1px solid rgba(124, 58, 237, 0.5);
+  border-radius: var(--radius-lg);
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-glow-sm);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+  border-color: var(--accent-light);
+  background: linear-gradient(135deg, #A855F7 0%, #C084FC 100%);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.success-message,
+.error-message {
+  padding: 15px 20px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+  font-weight: 600;
+  animation: slideDown var(--transition-base) ease-out;
+}
+
+.success-message {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #86EFAC;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.error-message {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #FCA5A5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.task-info {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 20px;
+  border-radius: var(--radius-xl);
+  margin-bottom: 30px;
+  box-shadow: var(--shadow-sm);
+  animation: slideUp 0.5s ease-out 0.2s both;
+}
+
+.task-info h3 {
+  margin-top: 0;
+  color: var(--text-primary);
+}
+
+.task-info code {
+  background-color: var(--bg-elevated);
+  color: var(--accent-light);
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.evaluation-metrics {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 30px;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  animation: slideUp 0.5s ease-out 0.3s both;
+}
+
+.evaluation-metrics h3 {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-size: 1.3em;
+}
+
+.evaluation-metrics ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.evaluation-metrics li {
+  padding: 12px 0;
+  padding-left: 30px;
+  color: var(--text-secondary);
+  position: relative;
+  font-size: 1.05em;
+}
+
+.evaluation-metrics li:before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #667eea;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .evaluation-header h1 {
+    font-size: 1.8em;
+  }
+
+  .evaluation-form {
+    padding: 20px;
+  }
+
+  .btn-primary {
+    padding: 10px 20px;
+  }
+}

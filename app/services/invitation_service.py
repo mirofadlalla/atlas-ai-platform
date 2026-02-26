@@ -182,13 +182,14 @@ class InvitationService:
             raise ValueError(f"User {invitation.invited_email} already registered")
         
         try:
-            # Create user
+            # Create user with pending approval status
             user = self.user_repo.create(
                 name=name,
                 email=invitation.invited_email,
-                password_hash=password_hash,
+                hashed_password=password_hash,
                 tenant_id=tenant_id,
-                role="user"  # Default role for invited users
+                role="user",  # Default role for invited users
+                approval_status="pending"  # Require admin approval before user can access services
             )
             
             # Accept invitation

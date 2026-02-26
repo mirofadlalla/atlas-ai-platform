@@ -4,7 +4,8 @@ Routes for RAG data ingestion endpoints.
 Implements admin-only access, rate limiting, and cost tracking for file ingestion.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Header
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -21,24 +22,36 @@ router = APIRouter(
 
 
 @router.post("/upload_file")
-def upload_file(
-    request: UploadRequest,
-    current_user: str = Header(None),
-    user_role: str = Header(None),
+async def upload_file(
+    tenant_id: str = Form(...),
+    source: str = Form(...),
+    author: str = Form(...),
+    file: UploadFile = File(...),
+    recursive: bool = Form(False),
+    file_extensions: str = Form(None),
+    current_user: str = Form(...),
+    user_role: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """
     Upload and ingest a file into the RAG system.
     
     This endpoint:
-    1. Applies rate limiting (admin-specific)
-    2. Verifies admin identity
-    3. Logs ingestion metrics to MLflow
-    4. Processes file and ingests into vector database
+    1. Accepts file upload from browser
+    2. Saves uploaded file to server storage
+    3. Applies rate limiting (admin-specific)
+    4. Verifies admin identity
+    5. Logs ingestion metrics to MLflow
+    6. Processes file and ingests into vector database
     
     Args:
-        request: Upload request with file path and metadata
-        current_user: Current user ID
+        tenant_id: Tenant identifier
+        source: Source name for tracking
+        author: Author name
+        file: Uploaded file from browser
+        recursive: Whether to process directories recursively
+        file_extensions: Comma-separated file extensions to process
+        current_user: Current user ID (from form)
         user_role: Current user role (must be 'admin')
         db: Database session
         
@@ -48,12 +61,13 @@ def upload_file(
     Raises:
         HTTPException: If user is not admin or other validation fails
     """
-    # Verify admin identity
-    if user_role != "admin":
-        logger.warning(f"Unauthorized ingestion attempt by {current_user} (role: {user_role})")
+    # Verify admin identity (case-insensitive)
+    user_role_lower = (user_role or "").lower().strip()
+    if user_role_lower != "admin":
+        logger.warning(f"Unauthorized ingestion attempt by {current_user} (role: {user_role}, normalized: {user_role_lower})")
         raise HTTPException(
             status_code=403,
-            detail="Only admins can ingest data"
+            detail=f"Only admins can ingest data. Your role: {user_role or 'not set'}"
         )
     
     # Apply rate limiting (admin-only endpoint)
@@ -64,33 +78,49 @@ def upload_file(
     )
     
     try:
+        # Create upload directory
+        upload_dir = Path("app/files/uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save uploaded file
+        file_path = upload_dir / file.filename
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
+        
+        logger.info(f"File uploaded: {file.filename} -> {file_path}")
+        
         # Log ingestion start to MLflow
         mlflow_run_id = MLflowService.start_run(
             experiment_name=MLflowService.DEFAULT_EXPERIMENT_INGEST,
-            run_name=f"ingest_{request.tenant_id}_{__import__('time').time()}",
+            run_name=f"ingest_{tenant_id}_{__import__('time').time()}",
             tags={
-                'tenant_id': request.tenant_id,
+                'tenant_id': tenant_id,
                 'admin_id': current_user,
-                'file_path': request.file_path
+                'uploaded_file': file.filename
             }
         )
         
         import mlflow
-        mlflow.log_param("tenant_id", request.tenant_id)
-        mlflow.log_param("file_path", request.file_path)
-        mlflow.log_param("source", request.source)
-        mlflow.log_param("author", request.author)
+        mlflow.log_param("tenant_id", tenant_id)
+        mlflow.log_param("uploaded_file", file.filename)
+        mlflow.log_param("source", source)
+        mlflow.log_param("author", author)
+        
+        # Parse file extensions if provided
+        file_ext_list = None
+        if file_extensions:
+            file_ext_list = [ext.strip() for ext in file_extensions.split(",")]
         
         # Process file
         result = PathProcessingService.process_path(
             self=PathProcessingService(),
-            file_path=request.file_path,
-            tenant_id=request.tenant_id,
-            source=request.source,
-            author=request.author,
+            file_path=str(file_path),
+            tenant_id=tenant_id,
+            source=source,
+            author=author,
             db=db,
-            recursive=request.recursive,
-            file_extensions=request.file_extensions,
+            recursive=recursive,
+            file_extensions=file_ext_list,
         )
         
         # Log success metrics
@@ -105,7 +135,7 @@ def upload_file(
         
         logger.info(
             f"File ingestion completed - Admin: {current_user}, "
-            f"Tenant: {request.tenant_id}, File: {request.file_path}"
+            f"Tenant: {tenant_id}, File: {file.filename}"
         )
         
         return {

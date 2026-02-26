@@ -27,33 +27,47 @@ async def evaluate(
     tenant_id: str = Form(...),
     file: UploadFile = File(...),
     runs: int = Form(2),
-    current_user: str = Header(None),
+    current_user: str = Header(None, alias="current-user"),
+    user_role: str = Header(None, alias="user-role"),
     db: Session = Depends(get_db)
 ):
     """
-    Start an evaluation task.
+    Start an evaluation task (admin only).
     
     This endpoint:
-    1. Applies rate limiting
-    2. Logs the evaluation request
-    3. Starts an MLflow run for tracking
-    4. Submits evaluation task to Celery background worker
+    1. Verifies admin identity
+    2. Applies rate limiting
+    3. Logs the evaluation request
+    4. Starts an MLflow run for tracking
+    5. Submits evaluation task to Celery background worker
     
     Args:
         tenant_id: Tenant identifier
         file: Evaluation dataset file
         runs: Number of evaluation runs to perform
         current_user: Current user ID (from header/auth)
+        user_role: Current user role (must be 'admin')
         db: Database session
         
     Returns:
         Dictionary with task ID and run ID
+        
+    Raises:
+        HTTPException: If user is not admin
     """
-    # Apply rate limiting (admin gets higher limit)
-    user_role = "admin" if current_user else "user"
+    # Verify admin identity
+    user_role_lower = (user_role or "").lower().strip()
+    if user_role_lower != "admin":
+        logger.warning(f"Unauthorized evaluation attempt by {current_user} (role: {user_role})")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only admins can run evaluations. Your role: {user_role or 'not set'}"
+        )
+    
+    # Apply rate limiting (admin-only endpoint)
     rate_limit(
         user_id=current_user or "anonymous",
-        role=user_role,
+        role="admin",
         endpoint="/eval/evaluate"
     )
     

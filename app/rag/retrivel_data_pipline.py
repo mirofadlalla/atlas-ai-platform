@@ -11,6 +11,7 @@ import time
 
 from app.models.runs import Runs
 from app.models.costLog import CostLog
+from app.rag.reranker import RankingService
 
 # Setup paths
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -20,8 +21,24 @@ from app.services.llm_runner import CustomLocalLLM
 from app.design_pattern.embedded_model import EmbeddedModel # Ensure it's LangChain compatible
 
 class RetrievalPipeline:
-    def __init__(self, tenant_id: int):
+    def __init__(self, tenant_id: int, use_reranker: bool = True, reranker_strategy: str = "hybrid"):
+        """
+        Initialize the retrieval pipeline with optional reranking.
+        
+        Args:
+            tenant_id: Tenant identifier
+            use_reranker: Whether to use document reranking
+            reranker_strategy: Reranking strategy ('cross-encoder', 'bm25', 'hybrid')
+        """
+        self.tenant_id = tenant_id
         self.retriever = get_retriever(tenant_id)
+        self.use_reranker = use_reranker
+        
+        # Initialize reranker if enabled
+        if use_reranker:
+            self.ranking_service = RankingService(strategy=reranker_strategy)
+        else:
+            self.ranking_service = None
         
         # 1. Define the embedding model (Object)
         # Use the same instance so Redis can use it for similarity comparison
@@ -48,9 +65,55 @@ class RetrievalPipeline:
         self.document_chain = create_stuff_documents_chain(self.local_llm, prompt)
         self.qa_chain = create_retrieval_chain(self.retriever, self.document_chain)
 
-    def retrieve(self, query: str):
-        """Direct access to the Retriever without LLM"""
-        return self.retriever.invoke(query)
+    def retrieve(self, query: str, top_k: int = 10):
+        """
+        Retrieve relevant documents for a query.
+        
+        Optionally applies reranking to improve result quality.
+        
+        Args:
+            query: User query
+            top_k: Number of top documents to return
+            
+        Returns:
+            List of relevant documents (reranked if enabled)
+        """
+        # Get initial retrieval results
+        docs = self.retriever.invoke(query)
+        
+        # Apply reranking if enabled
+        if self.use_reranker and self.ranking_service and docs:
+            # Convert LangChain documents to format acceptable by ranking service
+            doc_dicts = [
+                {
+                    'content': doc.page_content,
+                    'metadata': doc.metadata,
+                    'score': 1.0  # Initial retrieval score
+                }
+                for doc in docs
+            ]
+            
+            # Rerank documents
+            reranked = self.ranking_service.rank(query, doc_dicts, top_k=top_k)
+            
+            # Convert back to LangChain Document objects with updated metadata
+            # from langchain.schema import Document
+            from langchain_core.documents import Document
+
+            docs = [
+                Document(
+                    page_content=doc['content'],
+                    metadata={
+                        **doc['metadata'],
+                        'original_score': doc['original_score'],
+                        'rerank_score': doc['rerank_score'],
+                        'combined_score': doc['combined_score']
+                    }
+                )
+                for doc in reranked
+            ]
+        
+        return docs[:top_k]
     
     def ask(self, query: str):
         """

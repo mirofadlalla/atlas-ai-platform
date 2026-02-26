@@ -27,8 +27,8 @@ router = APIRouter(
 @router.post("/ask")
 async def ask_question(
     request: QueryRequest,
-    current_user: str = Header(None),
-    tenant_id: str = Header(...),
+    current_user: str = Header(None, alias="current-user"),
+    tenant_id: str = Header(..., alias="tenant-id"),
     db: Session = Depends(get_db)
 ):
     """
@@ -171,8 +171,8 @@ async def ask_question(
 @router.post("/retrieve")
 async def retrieve_documents(
     request: QueryRequest,
-    current_user: str = Header(None),
-    tenant_id: str = Header(...),
+    current_user: str = Header(None, alias="current-user"),
+    tenant_id: str = Header(..., alias="tenant-id"),
     db: Session = Depends(get_db)
 ):
     """
