@@ -38,6 +38,8 @@
 #     def embed_query(self, text: str) -> List[float]:
 #         embedding = self.model.encode(text,normalize_embeddings=True,batch_size=16)
 #         return embedding.tolist()
+
+
 import os
 import threading
 import logging
@@ -66,7 +68,7 @@ class EmbeddedModel(Embeddings):
     def _load_model(self):
         self.client = InferenceClient(
             provider="hf-inference",
-            api_key=os.environ["HF_TOKEN"]
+            api_key=os.environ["HF_TOKEN_M"]
         )
         self.model_id = "BAAI/bge-m3"
         logger.info("EmbeddedModel loaded successfully")

@@ -56,16 +56,91 @@ app.include_router(agent_route.router, prefix="/api", tags=["agent"])
 
 app.add_middleware(SentryAsgiMiddleware)
 
-from prometheus_client import Counter, Histogram
+# ==================== HEALTH CHECK ENDPOINT ====================
+
+@app.get("/health", tags=["monitoring"])
+async def health_check():
+    """Health check endpoint for container orchestration and monitoring."""
+    return {
+        "status": "healthy",
+        "service": "Atlas AI Platform",
+        "version": "1.0.0"
+    }
+
+# ==================== PROMETHEUS & MONITORING ====================
+
+from prometheus_client import Counter, Histogram, REGISTRY
 from prometheus_fastapi_instrumentator import Instrumentator
+from app.core.monitors import record_resource_metrics
+from starlette.middleware.base import BaseHTTPMiddleware
+from time import time
+import logging
 
-# Create a Prometheus counter for tracking the number of requests
-request_count = Counter("fastapi_requests_total", "Total number of requests")
+logger = logging.getLogger(__name__)
 
-# Create a Prometheus histogram for tracking request duration
-request_duration = Histogram("fastapi_request_duration_seconds", "Request duration in seconds")
+# Custom HTTP metrics middleware
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Middleware for tracking HTTP request/response metrics."""
 
-# Initialize the Prometheus instrumentator
+    async def dispatch(self, request, call_next):
+        start_time = time()
+        endpoint = request.url.path
 
-# Register the instrumentator with the FastAPI app
-Instrumentator().instrument(app)
+        try:
+            response = await call_next(request)
+            duration = time() - start_time
+
+            # Record metrics
+            from app.core.monitors import (
+                http_requests_total,
+                http_request_duration_seconds,
+                http_response_size_bytes,
+            )
+
+            method = request.method
+            status = response.status_code
+
+            http_requests_total.labels(
+                method=method, endpoint=endpoint, status_code=status
+            ).inc()
+            http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(
+                duration
+            )
+
+            if hasattr(response, "body"):
+                http_response_size_bytes.labels(method=method, endpoint=endpoint).observe(
+                    len(response.body)
+                )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error in metrics middleware: {e}")
+            raise
+
+
+# Add metrics middleware
+app.add_middleware(MetricsMiddleware)
+
+# Register the Instrumentator for advanced FastAPI metrics
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", tags=["monitoring"])
+
+# Background task for recording resource metrics
+@app.on_event("startup")
+async def startup_event():
+    """Initialize on startup."""
+    import asyncio
+
+    async def record_metrics_periodically():
+        """Record system metrics every 10 seconds."""
+        while True:
+            try:
+                record_resource_metrics()
+                await asyncio.sleep(10)
+            except Exception as e:
+                logger.error(f"Error recording metrics: {e}")
+                await asyncio.sleep(10)
+
+    # Run metrics collection in background
+    asyncio.create_task(record_metrics_periodically())
+    logger.info("Prometheus monitoring initialized successfully")

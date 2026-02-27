@@ -25,11 +25,11 @@ celery_app.conf.task_default_routing_key = "logging"
 
 
 celery_app.conf.task_routes = {
-    "app.services.ingest_rag_service.ingest_file_task": {
+    "app.services.rag_services.ingest_rag_service.ingest_file_task": {
         "queue": "ingest_data_queue",
         "routing_key": "ingest",
     },
-    "app.services.eval_rag_service.evaluate_task": {
+    "app.services.rag_services.eval_pipline.evaluate_task": {
         "queue": "eval_data_queue",
         "routing_key": "eval",
     },

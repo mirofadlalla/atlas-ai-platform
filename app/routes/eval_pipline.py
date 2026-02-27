@@ -71,6 +71,15 @@ async def evaluate(
         endpoint="/eval/evaluate"
     )
     
+    # Always end any active run from previous requests
+    try:
+        import mlflow
+        mlflow.end_run()
+    except:
+        pass
+    
+    mlflow_run_id = None
+    
     try:
         # Initialize MLflow experiment and start run
         mlflow_run_id = MLflowService.start_run(
@@ -83,12 +92,13 @@ async def evaluate(
             }
         )
         
-        # Log parameters
-        MLflowService.initialize_experiment(MLflowService.DEFAULT_EXPERIMENT_EVAL)
-        import mlflow
-        mlflow.log_param("tenant_id", tenant_id)
-        mlflow.log_param("num_runs", runs)
-        mlflow.log_param("dataset_filename", file.filename)
+        # Log parameters only if run started successfully
+        if mlflow_run_id:
+            MLflowService.initialize_experiment(MLflowService.DEFAULT_EXPERIMENT_EVAL)
+            import mlflow
+            mlflow.log_param("tenant_id", tenant_id)
+            mlflow.log_param("num_runs", runs)
+            mlflow.log_param("dataset_filename", file.filename)
         
         # Save uploaded file
         upload_dir = Path("app/files/eval_files")

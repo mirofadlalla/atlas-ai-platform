@@ -1,38 +1,287 @@
 version: '3.9'
-services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - db
 
-  db:
-    image: postgres:15
+services:
+  # ==================== PostgreSQL Database ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: atlas-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-atlas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas_db}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 1m30s
-      timeout: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas_user} -d ${POSTGRES_DB:-atlas_db}"]
+      interval: 10s
+      timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - atlas-network
+    restart: unless-stopped
 
+  # ==================== Qdrant Vector Database ====================
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:latest
+    container_name: atlas-qdrant
+    environment:
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-atlas_qdrant_key}
     ports:
-      - "6333:6333"
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # ==================== Redis Cache & Message Broker ====================
+  redis:
+    image: redis:7-alpine
+    container_name: atlas-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-atlas_redis_password}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-atlas_redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # ==================== FastAPI Application ====================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas-api
+    environment:
+      PYTHONUNBUFFERED: "1"
+      POSTGRES_USER: ${POSTGRES_USER:-atlas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas_db}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      QDRANT_URL: http://qdrant:6333
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-atlas_redis_password}
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/1
+      DEBUG: "${DEBUG:-False}"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${API_PORT:-8000}:8000"
+      - "9090:9090"  # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    networks:
+      - atlas-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==================== Celery Worker ====================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas-celery-worker
+    command: celery -A app.celery.celery_config worker --loglevel=info --concurrency=4
+    environment:
+      PYTHONUNBUFFERED: "1"
+      POSTGRES_USER: ${POSTGRES_USER:-atlas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas_db}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      QDRANT_URL: http://qdrant:6333
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-atlas_redis_password}
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/1
+      DEBUG: "${DEBUG:-False}"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      - postgres
+      - qdrant
+      - redis
+      - api
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # ==================== Celery Beat (Scheduled Tasks) ====================
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas-celery-beat
+    command: celery -A app.celery.celery_config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      PYTHONUNBUFFERED: "1"
+      POSTGRES_USER: ${POSTGRES_USER:-atlas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas_db}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      QDRANT_URL: http://qdrant:6333
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-atlas_redis_password}
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/1
+      DEBUG: "${DEBUG:-False}"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      - postgres
+      - qdrant
+      - redis
+      - api
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # ==================== Prometheus Metrics Collection ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: atlas-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+    networks:
+      - atlas-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== Grafana Visualization ====================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: atlas-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_INSTALL_PLUGINS: 'grafana-piechart-panel,grafana-worldmap-panel'
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3100}
+    ports:
+      - "${GRAFANA_PORT:-3100}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - atlas-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== PgAdmin Database Management ====================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: atlas-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # ==================== Flower Celery Monitoring ====================
+  flower:
+    image: mher/flower:latest
+    container_name: atlas-flower
+    command: celery -A app.celery.celery_config flower --port=5555 --broker=redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/0
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-atlas_redis_password}@redis:6379/1
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    depends_on:
+      - redis
+      - celery_worker
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+# ==================== NETWORKS & VOLUMES ====================
+
+networks:
+  atlas-network:
+    driver: bridge
 
 volumes:
+  postgres_data:
+    driver: local
   qdrant_data:
-  db_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  pgadmin_data:
+    driver: local

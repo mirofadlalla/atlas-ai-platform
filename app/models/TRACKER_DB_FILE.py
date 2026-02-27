@@ -10,3 +10,6 @@ class TRACKER_DB_FILE(Base):
     file_name = Column(String, nullable=False)
     file_hash = Column(String, index=True)
     processed_at = Column(DateTime , default=datetime.utcnow)
+    status = Column(String, default='completed')  # 'processing', 'completed', 'failed'
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)

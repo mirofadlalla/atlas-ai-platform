@@ -58,6 +58,15 @@ async def ask_question(
         endpoint="/query/ask"
     )
     
+    # Always end any active run from previous requests
+    try:
+        import mlflow
+        mlflow.end_run()
+    except:
+        pass
+    
+    mlflow_run_id = None
+    
     try:
         # Start MLflow run for this query
         mlflow_run_id = MLflowService.start_run(
@@ -70,11 +79,12 @@ async def ask_question(
             }
         )
         
-        # Log query parameters
-        import mlflow
-        mlflow.log_param("tenant_id", tenant_id)
-        mlflow.log_param("query_length", len(request.query))
-        mlflow.log_param("user_id", current_user or "anonymous")
+        # Log query parameters (only if run started successfully)
+        if mlflow_run_id:
+            import mlflow
+            mlflow.log_param("tenant_id", tenant_id)
+            mlflow.log_param("query_length", len(request.query))
+            mlflow.log_param("user_id", current_user or "anonymous")
         
         # Create pipeline for this tenant with database session for automatic logging
         pipeline = RetrievalPipeline(tenant_id=tenant_id, db=db)
@@ -113,12 +123,13 @@ async def ask_question(
                 except:
                     pass
                 
-                # Log metrics to MLflow
-                mlflow.log_metric("latency_seconds", latency)
-                mlflow.log_metric("cost_usd", cost_usd)
-                mlflow.log_metric("input_tokens", input_tokens)
-                mlflow.log_metric("output_tokens", output_tokens)
-                mlflow.log_metric("answer_length", len(full_answer))
+                # Log metrics to MLflow (if run is active)
+                if mlflow_run_id:
+                    mlflow.log_metric("latency_seconds", latency)
+                    mlflow.log_metric("cost_usd", cost_usd)
+                    mlflow.log_metric("input_tokens", input_tokens)
+                    mlflow.log_metric("output_tokens", output_tokens)
+                    mlflow.log_metric("answer_length", len(full_answer))
                 
                 logger.info(
                     f"Query completed - Tenant: {tenant_id}, User: {current_user}, "
@@ -131,12 +142,16 @@ async def ask_question(
             
             finally:
                 # End MLflow run
-                MLflowService.end_run(status="FINISHED")
+                if mlflow_run_id:
+                    MLflowService.end_run(status="FINISHED")
         
         return StreamingResponse(answer_generator(), media_type="text/plain")
         
     except Exception as e:
         logger.error(f"Error processing query: {e}")
+        # End the run if it was started
+        if mlflow_run_id:
+            MLflowService.end_run(status="FAILED")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -216,25 +231,21 @@ async def get_cost_analytics(
         dict: Cost breakdown by model, date, and total costs
     """
     try:
-        from app.repositories.cost_log_repository import CostLogRepository
-        from app.repositories.runs_repository import RunsRepository
+        from app.models.costLog import CostLog
+        from app.models.runs import Runs
         from sqlalchemy import func
         
-        # Get total costs
-        cost_repo = CostLogRepository(db)
-        runs_repo = RunsRepository(db)
-        
-        # Query total cost and token usage
+        # Query total cost and token usage with proper joins
         cost_data = db.query(
-            func.sum(cost_repo.model.cost_usd).label('total_cost'),
-            func.sum(cost_repo.model.input_tokens).label('total_input_tokens'),
-            func.sum(cost_repo.model.output_tokens).label('total_output_tokens'),
-            cost_repo.model.model_name
+            func.sum(CostLog.cost_usd).label('total_cost'),
+            func.sum(CostLog.input_tokens).label('total_input_tokens'),
+            func.sum(CostLog.output_tokens).label('total_output_tokens'),
+            CostLog.model_name
+        ).join(
+            Runs, CostLog.run_id == Runs.run_id
         ).filter(
-            # Join with runs to filter by tenant
-            cost_repo.model.run_id == runs_repo.model.run_id,
-            runs_repo.model.tenant_id == tenant_id
-        ).group_by(cost_repo.model.model_name).all()
+            Runs.tenant_id == tenant_id
+        ).group_by(CostLog.model_name).all()
         
         analytics = {
             "total_cost": 0.0,

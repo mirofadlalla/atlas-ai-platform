@@ -12,7 +12,7 @@ from app.core.db import get_db_session
     time_limit=600,
     soft_time_limit=550
 )
-def ingest_file_task(self, file_path: str, tenant_id: int, source: str, author: str):
+def ingest_file_task(self, file_path: str, tenant_id: str, source: str, author: str):
     """
     Async task to ingest files into RAG pipeline.
     Imports RAGPipeline here to avoid loading heavy dependencies during worker startup.

@@ -1,1 +1,2 @@
 .env
+celery_worker.log

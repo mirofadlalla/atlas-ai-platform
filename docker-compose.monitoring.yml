@@ -1,0 +1,87 @@
+version: '3.9'
+
+# ==================== STANDALONE MONITORING STACK ====================
+#
+# Usage: docker-compose -f docker-compose.monitoring.yml up -d
+#
+# This runs ONLY:
+# - Prometheus (Docker) → Port 9091
+# - Grafana (Docker) → Port 3100
+#
+# Scrapes from: API on HOST MACHINE (localhost:8000)
+# Perfect for Windows development with Docker Desktop
+#
+# ===================================================================
+
+services:
+  # ==================== Prometheus Metrics Collection ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: atlas-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.monitoring.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Allow Docker to reach host machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==================== Grafana Visualization ====================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: atlas-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_INSTALL_PLUGINS: 'grafana-piechart-panel,grafana-worldmap-panel'
+      GF_SERVER_ROOT_URL: http://localhost:3100
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_LOG_MODE: console
+      GF_LOG_LEVEL: info
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    ports:
+      - "3100:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Allow Docker to reach host machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+# ==================== NETWORKS & VOLUMES ====================
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

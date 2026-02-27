@@ -12,6 +12,7 @@ from app.core.db import get_db
 from app.core.rate_limitizer import rate_limit
 from app.services.rag_services.path_processing_service import PathProcessingService
 from app.services.mlflow_service import MLflowService
+from app.services.rag_services.ingest_rag_service import ingest_file_task
 from app.schema.upload_request import UploadRequest
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,15 @@ async def upload_file(
         endpoint="/ingest-rag/upload_file"
     )
     
+    # Always end any active run from previous requests
+    try:
+        import mlflow
+        mlflow.end_run()
+    except:
+        pass
+    
+    mlflow_run_id = None
+    
     try:
         # Create upload directory
         upload_dir = Path("app/files/uploads")
@@ -100,48 +110,44 @@ async def upload_file(
             }
         )
         
-        import mlflow
-        mlflow.log_param("tenant_id", tenant_id)
-        mlflow.log_param("uploaded_file", file.filename)
-        mlflow.log_param("source", source)
-        mlflow.log_param("author", author)
+        # Log parameters only if run started successfully
+        if mlflow_run_id:
+            import mlflow
+            mlflow.log_param("tenant_id", tenant_id)
+            mlflow.log_param("uploaded_file", file.filename)
+            mlflow.log_param("source", source)
+            mlflow.log_param("author", author)
         
         # Parse file extensions if provided
         file_ext_list = None
         if file_extensions:
             file_ext_list = [ext.strip() for ext in file_extensions.split(",")]
         
-        # Process file
-        result = PathProcessingService.process_path(
-            self=PathProcessingService(),
-            file_path=str(file_path),
-            tenant_id=tenant_id,
-            source=source,
-            author=author,
-            db=db,
-            recursive=recursive,
-            file_extensions=file_ext_list,
-        )
+        # Send file processing task to Celery queue (async)
+        logger.info(f"Attempting to queue task: tenant_id={tenant_id}, file={file.filename}")
         
-        # Log success metrics
-        mlflow.log_metric("success", 1)
-        if isinstance(result, dict) and "details" in result:
-            details = result.get("details", {})
-            if isinstance(details, dict):
-                if "documents_count" in details:
-                    mlflow.log_metric("documents_count", details["documents_count"])
-                if "chunks_count" in details:
-                    mlflow.log_metric("chunks_count", details["chunks_count"])
+        try:
+            task = ingest_file_task.delay(
+                file_path=str(file_path),
+                tenant_id=tenant_id,  # Keep as string (UUID)
+                source=source,
+                author=author
+            )
+            logger.info(f"✓ Task queued successfully: {task.id}")
+        except Exception as task_error:
+            logger.error(f"✗ Failed to queue task: {type(task_error).__name__}: {task_error}", exc_info=True)
+            raise
         
         logger.info(
-            f"File ingestion completed - Admin: {current_user}, "
-            f"Tenant: {tenant_id}, File: {file.filename}"
+            f"File ingestion task queued - Admin: {current_user}, "
+            f"Tenant: {tenant_id}, File: {file.filename}, Task ID: {task.id}"
         )
         
         return {
-            "message": "File processed and ingested successfully",
-            "result": result,
-            "mlflow_run_id": mlflow_run_id
+            "message": "File processing task queued successfully",
+            "task_id": task.id,
+            "file": file.filename,
+            "status": "processing"
         }
         
     except PermissionError as e:
@@ -151,7 +157,10 @@ async def upload_file(
         logger.error(f"Validation error during ingestion: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error during file ingestion: {e}")
+        logger.error(f"Error during file ingestion: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        MLflowService.end_run(status="FINISHED")
+        try:
+            MLflowService.end_run(status="FINISHED")
+        except Exception as e:
+            logger.error(f"Error ending MLflow run: {e}")
