@@ -8,6 +8,7 @@ import RegisterPage from './pages/RegisterPage';
 import TenantRegistrationPage from './pages/TenantRegistrationPage';
 import DashboardPage from './pages/DashboardPage';
 import QueryPage from './pages/QueryPage';
+import AgentPage from './pages/AgentPage';
 import IngestPage from './pages/IngestPage';
 import AdminPanel from './pages/AdminPanel';
 import EvaluationPage from './pages/EvaluationPage';
@@ -126,6 +127,14 @@ function App() {
             element={
               <ProtectedRoute isAuthenticated={isAuthenticated}>
                 <QueryPage user={user} />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/agent" 
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <AgentPage user={user} />
               </ProtectedRoute>
             } 
           />

@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 def call_llama(
     prompt: str,
     model_name: str = "Qwen/Qwen2.5-1.5B-Instruct",
-    system_prompt: str = "",
+    # system_prompt: str = "",
     temperature: float = 0.2
 ):
     """
@@ -20,13 +20,13 @@ def call_llama(
         temperature: Temperature for generation (0-1)
     
     Returns:
-        tuple: (output_text, input_tokens, output_tokens)
+        dict: Dictionary with keys: 'content' (str), 'input_tokens' (int), 'output_tokens' (int), 'total_tokens' (int)
     """
     try:
         llm = LLMService()
         output = llm.generate(
             prompt,
-            system_prompt=system_prompt,
+            # system_prompt=system_prompt,
             temperature=temperature
         )
         # generate() now returns a plain str; token counts are not available via the API
@@ -66,7 +66,7 @@ class CustomLocalLLM(LLM):
         # Normal Method using invoke
         llm = LLMService()
         res = llm.generate(prompt, system_prompt="")
-        return res['content']
+        return res
 
     @property
     def _llm_type(self) -> str:

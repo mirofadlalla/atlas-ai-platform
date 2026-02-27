@@ -1,15 +1,16 @@
 <div align="center">
 
-<h1>🌍 Atlas AI Platform</h1>
+<h1>🌍 Atlas AI Platform - Multi-Tenant RAG with Agentic AI</h1>
 
 <p>
-  <strong>A production-ready, multi-tenant RAG (Retrieval-Augmented Generation) platform with advanced authentication, document ingestion, semantic retrieval, and enterprise-grade evaluation</strong><br/>
-  Built with FastAPI · Qdrant · PostgreSQL · Celery · MLflow
+  <strong>A production-ready, multi-tenant RAG (Retrieval-Augmented Generation) platform with intelligent agentic AI, advanced authentication, document ingestion, semantic retrieval, SQL query generation, and enterprise-grade evaluation</strong><br/>
+  Built with FastAPI · LangGraph · Qdrant · PostgreSQL · Celery · MLflow
 </p>
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white"/>
+  <img src="https://img.shields.io/badge/LangGraph-Agent-purple?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/Qdrant-Vector%20DB-ef6c00?style=for-the-badge&logo=databricks&logoColor=white"/>
   <img src="https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white"/>
   <img src="https://img.shields.io/badge/MLflow-Tracking-0194E2?style=for-the-badge&logo=mlflow&logoColor=white"/>
@@ -17,7 +18,7 @@
 </p>
 
 <p>
-  <em>Authenticate → Upload Documents → Semantic Search → LLM-Powered Answers → Evaluate Quality → Track Costs</em>
+  <em>Authenticate → Upload Documents → Agent Reasoning → SQL Queries & Semantic Search → LLM-Powered Answers → Evaluate Quality → Track Costs</em>
 </p>
 
 </div>
@@ -38,31 +39,34 @@
 - [Multi-Tenancy Architecture](#-multi-tenancy-architecture)
 - [Document Management](#-document-management)
 - [RAG Pipeline Deep Dive](#-rag-pipeline-deep-dive)
+- [Agentic AI System](#-agentic-ai-system)
 - [Query Pipeline](#-query-pipeline)
 - [Evaluation Framework](#-evaluation-framework)
 - [Cost Tracking & Analytics](#-cost-tracking--analytics)
 - [Design Patterns](#-design-patterns)
 - [Database Schema](#-database-schema)
 - [Configuration](#-configuration)
+- [System Diagrams & Architecture](#system-diagrams-and-architecture-documentation-see-systemdiagrams) 
 - [Roadmap](#-roadmap)
 
 ---
 
 ## 🚀 What is Atlas AI?
 
-**Atlas AI** is a comprehensive, enterprise-grade multi-tenant Retrieval-Augmented Generation (RAG) platform that enables organizations to:
+**Atlas AI** is a comprehensive, enterprise-grade multi-tenant platform that combines Retrieval-Augmented Generation (RAG) with Agentic AI. It enables organizations to:
 
 - 🔐 **Authenticate users securely** with JWT-based authentication and role-based access control
 - 🤝 **Manage team invitations** with admin approval workflows and token-based signup
 - 📂 **Ingest structured and unstructured documents** (PDFs, text files, entire directories) with deduplication
-- 🔍 **Retrieve semantically relevant chunks** using advanced vector similarity search with reranking
-- 💬 **Generate grounded, accurate answers** using LLMs (Qwen 2.5 via Featherless AI)
-- 📊 **Evaluate retrieval and generation quality** with comprehensive metrics
-- 💰 **Track API costs and usage** with detailed token counting and cost analytics
-- 🔐 **Isolate data per tenant** — complete enterprise data segregation with namespace-based vector collections
+- 🤖 **Enable intelligent agents** that reason about questions, decompose them into steps, and gather data from multiple sources (SQL + documents)
+- 🔍 **Retrieve semantically relevant chunks** using advanced vector similarity search with cross-encoder & BM25 reranking
+- 💬 **Generate grounded, accurate answers** using LLMs (Qwen 2.5 via Featherless AI) with context from databases and documents
+- 📊 **Evaluate retrieval and generation quality** with comprehensive metrics (Precision, Recall, F1, MRR, stability testing)
+- 💰 **Track API costs and usage** with detailed token counting and cost analytics per tenant
+- 🔐 **Isolate data per tenant** — complete enterprise data segregation with namespace-based vector collections and database-level filtering
 - 📊 **Monitor experiments** with MLflow integration for experiment tracking and model versioning
 
-Whether you're building an internal knowledge base, document Q&A system, customer support AI, or enterprise-grade semantic search engine, Atlas AI provides the complete production-ready pipeline.
+Whether you're building an internal knowledge base, document Q&A system, customer support AI, SQL-powered analytics engine, or enterprise-grade intelligent assistant, Atlas AI provides the complete production-ready pipeline with agentic reasoning capabilities.
 
 ---
 
@@ -123,6 +127,24 @@ Whether you're building an internal knowledge base, document Q&A system, custome
 - [x] **Run tracking** (query, answer, latency, retrieved documents)
 - [x] **Cache detection** (cache hit tracking)
 - [x] **Cost analytics** (aggregated cost data per tenant)
+
+### Phase 6: Agentic AI System ✓
+
+- [x] **LangGraph-based agent orchestration** (4-node reasoning graph)
+- [x] **Intelligent question decomposition** (breaks complex questions into steps)
+- [x] **SQL query generation** (LLM-powered database queries with keyword detection)
+- [x] **SQL validation & security** (tenant isolation, injection prevention)
+- [x] **Document retrieval node** (semantic search integration)
+- [x] **Answer synthesis** (combines SQL results + documents for accurate responses)
+- [x] **Streaming agent responses** (Server-Sent Events for real-time agent thinking)
+- [x] **Batch agent mode** (non-streaming for client convenience)
+- [x] **Agent run logging** (saves all agent executions to database)
+- [x] **Agent cost tracking** (tracks tokens and costs for agent interactions)
+- [x] **Observation history** (complete audit trail of agent reasoning)
+- [x] **Multi-step execution** (enforces data gathering before answer generation)
+- [x] **Keyword-based routing** (automatically routes to SQL for quantitative questions)
+- [x] **Frontend Agent Page** (React component with streaming visualization)
+
 
 ---
 
@@ -739,6 +761,238 @@ POST /ingest-rag/upload_file
 
 ---
 
+## 🤖 Agentic AI System
+
+Atlas AI includes a **LangGraph-based agentic AI system** that intelligently decomposes questions and gathers data from multiple sources before synthesizing answers. Unlike traditional RAG, the agent actively reasons about what data is needed and how to retrieve it.
+
+### Agent Architecture
+
+The agent operates as a **4-node reasoning graph**:
+
+```
+User Question
+    │
+    ├─► 1. THOUGHT NODE 🧠
+    │   ├─► Analyzes question intent
+    │   ├─► Detects data requirements (keywords: "how many", "count", "total", etc.)
+    │   ├─► Tracks what data has been gathered
+    │   └─► Decides next action: SQL│Retrieval│Finish
+    │
+    ├─► 2. ROUTER 🔀
+    │   ├─► Validates agent decision
+    │   ├─► Enforces data gathering (prevents finishing without data)
+    │   ├─► Implements step limits (max 10 steps)
+    │   └─► Routes to appropriate node
+    │
+    ├─► 3. TOOL EXECUTION (SQL or Retrieval)
+    │   │
+    │   ├─► SQL NODE 🗄️
+    │   │   ├─► Generates SQL from question
+    │   │   ├─► Validates query (tenant isolation + injection prevention)
+    │   │   ├─► Executes against PostgreSQL
+    │   │   ├─► Formats results for LLM
+    │   │   └─► Tracks observation history
+    │   │
+    │   └─► RETRIEVAL NODE 📚
+    │       ├─► Embeds question
+    │       ├─► Searches Qdrant vector DB
+    │       ├─► Ranks results by relevance
+    │       └─► Formats documents for LLM
+    │
+    ├─► 4. FINISH NODE ✅
+    │   ├─► Receives gathered data (SQL results + documents)
+    │   ├─► Compiles observation history
+    │   ├─► Generates comprehensive answer
+    │   ├─► Emphasizes using ACTUAL data (not estimates)
+    │   └─► Returns final response to user
+    │
+    └─► Stream to User (SSE)
+```
+
+### Key Features
+
+#### 1. Intelligent Question Decomposition
+- Analyzes questions to detect data requirements
+- Uses keyword matching: "how many", "count", "total", "average", "sum", "revenue", "stats"
+- Breaks complex questions into sequential steps
+- Example: "How many users and what's our revenue?"
+  - Step 1: Query database for user count
+  - Step 2: Query database for revenue totals
+  - Step 3: Synthesize both numbers into answer
+
+#### 2. SQL Query Generation with Security
+- LLM-powered SQL generation from natural language questions
+- **Security measures:**
+  - Tenant isolation (enforced WHERE clause with tenant_id)
+  - SQL injection prevention (parameterized queries)
+  - Query cost estimation (prevents expensive queries)
+  - Configurable execution limits
+
+#### 3. Data-Gathering Enforcement
+- **Safety Override:** If question needs data but agent decides to finish without gathering, forces SQL/retrieval execution
+- **Prevents hallucination:** Agent must attempt data retrieval before providing factual answers
+- **Observation tracking:** Complete audit trail of all reasoning steps
+
+#### 4. Answer Synthesis with Data Emphasis
+- Combines SQL results, documents, and reasoning steps
+- Explicit instructions to use EXACT numbers from data (not estimates)
+- Structured formatting with clear sections:
+  - DATABASE QUERY RESULTS
+  - RETRIEVED KNOWLEDGE BASE DOCUMENTS
+  - ANALYSIS STEPS
+
+### API Endpoints
+
+#### Streaming Mode (Real-time Agent Thinking)
+
+```bash
+POST /agent/ask-agent
+Content-Type: application/json
+
+{
+  "question": "How many users registered in Q4?",
+  "tenant_id": 123
+}
+```
+
+**Response (Server-Sent Events):**
+```
+data: {"type": "tool_start", "tool": "Thinking"}
+data: {"type": "thought", "content": "Question asks for historical data..."}
+data: {"type": "tool_start", "tool": "SQL Query"}
+data: {"type": "tool_end", "tool": "SQL Query"}
+data: {"type": "answer", "content": "Based on the database query..."}
+data: {"type": "complete", "final_answer": "42 users registered in Q4"}
+data: {"type": "done", "status": "success"}
+```
+
+**Automatically logs** to database:
+- Question & final answer
+- Execution steps & observations
+- SQL queries executed
+- Documents retrieved
+- Execution latency
+- Token usage & costs
+
+#### Batch Mode (Full Response)
+
+```bash
+POST /agent/ask-agent-batch
+Content-Type: application/json
+
+{
+  "question": "How many users registered in Q4?",
+  "tenant_id": 123
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "question": "How many users registered in Q4?",
+  "final_answer": "42 users registered in Q4",
+  "thoughts": ["Analysis of question...", "SQL execution..."],
+  "step_count": 3,
+  "total_cost": 0.0012,
+  "sql_queries": ["SELECT COUNT(*) FROM users WHERE..."],
+  "retrieved_context": "..."
+}
+```
+
+### Agent Run Logging
+
+Both endpoints automatically log to database via **Celery background task**:
+
+```python
+# app/services/rag_services/agent_logging_service.py
+trigger_agent_logging(
+    tenant_id=request.tenant_id,
+    question=request.question,
+    final_answer=result.get("final_answer"),
+    latency=execution_time,
+    step_count=result.get("step_count"),
+    total_cost=result.get("total_cost"),
+    input_tokens=0,
+    output_tokens=0,
+    sql_queries=sql_executed,
+    retrieved_docs=docs_found
+)
+```
+
+**Database Records Created:**
+- **Runs table:** question, answer, latency, cache_hit, retrieved_docs
+- **Cost Logs table:** input_tokens, output_tokens, cost_usd, model_name
+
+### Example Scenarios
+
+#### Scenario 1: Simple Count Question
+```
+Q: "How many users do we have?"
+→ Thought: "Question wants user count - needs SQL"
+→ SQL: "SELECT COUNT(*) FROM users WHERE tenant_id = 123"
+→ Result: "42 users"
+→ Answer: "We currently have 42 users in the system"
+```
+
+#### Scenario 2: Multi-Part Question
+```
+Q: "How many active subscriptions and what's the total revenue?"
+→ Thought: "Two questions - needs two SQL queries"
+→ SQL 1: "SELECT COUNT(*) FROM subscriptions WHERE status = 'active'"
+→ Result 1: 156
+→ SQL 2: "SELECT SUM(amount) FROM payments WHERE status = 'completed'"
+→ Result 2: $45,320
+→ Answer: "We have 156 active subscriptions generating $45,320 in revenue"
+```
+
+#### Scenario 3: Combined Data & Documents
+```
+Q: "How many users have the premium plan and what docs discuss premium features?"
+→ Thought: "Needs both SQL (count) and document search"
+→ SQL: "SELECT COUNT(*) FROM users WHERE plan = 'premium'"
+→ SQL Result: 24 users
+→ Retrival: Search for "premium features"
+→ Retrieved: 3 documents about premium features
+→ Answer: "24 users have the premium plan. According to our documentation..."
+```
+
+### Frontend Agent Page
+
+React component (`AgentPage.jsx`) provides:
+- ✅ Streaming visualization (real-time thinking display)
+- ✅ Toggle between streaming and batch modes
+- ✅ Tool status indicator (SQL running, documents retrieved, etc.)
+- ✅ Thought history display
+- ✅ Final answer rendering
+- ✅ Cost & step count display
+- ✅ Error handling with graceful fallbacks
+
+### Configuration & Customization
+
+**Keyword Detection:**
+Edit `app/agent/nodes/thought_node.py` to add custom keywords:
+```python
+needs_sql_keywords = [
+    'how many', 'count', 'total', 'average', 'sum',
+    'revenue', 'stats', 'users', 'products',  # Add more here
+]
+```
+
+**Step Limit:**
+Configure in `app/agent/core/router.py`:
+```python
+max_steps = 10  # Increase for complex multi-part questions
+```
+
+**SQL Cost Limit:**
+Configure in `app/agent/nodes/sql_node.py`:
+```python
+MAX_ALLOWED_COST = 1000.0  # Prevent expensive queries
+```
+
+---
+
 ## 💬 Query Pipeline
 
 ### End-to-End Query Processing
@@ -1205,6 +1459,22 @@ Persistent volumes ensure your data survives container restarts:
 
 ---
 
+## 📊 System Diagrams & Architecture Documentation
+
+For comprehensive visual documentation of the system architecture, including:
+- **Agent Reasoning Loop** - 4-node LangGraph state machine
+- **Document Ingestion Pipeline** - Two-stage semantic chunking flow
+- **Query Retrieval Pipeline** - Vector search and reranking strategies
+- **Authentication & Authorization** - JWT and approval workflows
+- **Multi-Tenant Data Isolation** - Complete isolation strategy across 3 layers
+- **Cost Tracking & Logging** - Token counting and analytics pipeline
+- **System Architecture Overview** - Complete system topology and data flows
+- **Performance & Scalability** - Latency breakdown and bottleneck analysis
+
+**See: [SYSTEM_DIAGRAMS.md](SYSTEM_DIAGRAMS.md)** ← Detailed sequence diagrams and architectural flows
+
+---
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -1225,6 +1495,6 @@ This project is licensed under the MIT License.
 
 **Built with ❤️ by the Atlas AI Team**
 
-_Authenticate → Ingest → Retrieve → Answer → Evaluate → Track Costs → Stay tuned for Agents (v2.0)_
+_Authenticate → Ingest → Agent Reasoning → Retrieve/Query Data → Synthesize Answers → Evaluate Quality → Track Costs → Scale to Millions_
 
 </div>

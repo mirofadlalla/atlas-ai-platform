@@ -112,6 +112,11 @@ class MLflowService:
             model_name: Name of the model
         """
         try:
+            # End any active run before starting a new one
+            active_run = mlflow.active_run()
+            if active_run:
+                mlflow.end_run()
+            
             if run_id:
                 mlflow.start_run(run_id=run_id)
             else:

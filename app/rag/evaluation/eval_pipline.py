@@ -4,30 +4,25 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
-from huggingface_hub import InferenceClient
-
 # Local Imports
-from app.rag.retrivel_data_pipline import get_retriever
+from app.rag.retrivel_data_pipline import RetrievalPipeline
 from app.rag.evaluation.relevance_evaluation import relevance_evaluation_
 from app.rag.evaluation.retrieval_stability import retrieval_stability_ as RetrievalStability
 
 class EvalPipeline:
-    def __init__(self, path: Path, tenant_id: str): 
+    def __init__(self, path: Path, tenant_id: str, use_reranker: bool = True, reranker_strategy: str = "hybrid"): 
         self.tenant_id = tenant_id
         self.data = self._get_json_file(path)
         
-
-        # 1. Setup Retriever
-        self.retriever = get_retriever(tenant_id=self.tenant_id)
-        if hasattr(self.retriever, 'search_kwargs'):
-            self.retriever.search_kwargs["k"] = 2  # Limit to top-2 for evaluation consistency
-
-        # 2. Setup LLM (Qwen via Featherless AI on HuggingFace)
-        self.llm = InferenceClient(
-            provider="featherless-ai",
-            api_key=os.environ["HF_TOKEN"],
+        # Initialize RetrievalPipeline with CustomLocalLLM and automatic metric logging
+        self.pipeline = RetrievalPipeline(
+            tenant_id=tenant_id,
+            use_reranker=use_reranker,
+            reranker_strategy=reranker_strategy
         )
-        self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
+        self.retriever = self.pipeline.retriever
+        if hasattr(self.retriever, 'search_kwargs'):
+            self.retriever.search_kwargs["k"] = 10  # Limit to top-2 for evaluation consistency
 
     def _get_json_file(self, path: Path) -> List[Dict]:
         try:
@@ -37,34 +32,16 @@ class EvalPipeline:
             print(f"[Error] Failed to read JSON: {e}")
             return []
 
-    def _answer_question(self, question: str, docs) -> str:
-        """Call the LLM directly with retrieved context."""
-        context = "\n\n".join(d.page_content for d in docs)
-        prompt = (
-        "You are a precise QA assistant. Answer the question using ONLY the provided context.\n\n"
-        f"CONTEXT:\n{context}\n\n"
-        f"QUESTION: {question}\n\n"
-        "ANSWER FORMAT GUIDELINES:\n"
-        "• Be concise - answer in as few words as possible while being complete\n"
-        "• Use the same keywords and terminology found in the context\n"
-        "• For factual questions (names, dates, numbers), provide just the fact\n"
-        "• For explanatory questions, provide a brief 1-2 sentence explanation\n"
-        "• Match the language style of the context\n\n"
-        "QUALITY REQUIREMENTS:\n"
-        "✓ Extract answers verbatim when possible\n"
-        "✓ Prioritize precision over completeness\n"
-        "✓ If multiple pieces of information exist, include the most relevant\n"
-        "✓ Never invent or hallucinate information\n"
-        "✓ If unsure or answer not in context, say exactly 'I don't know'\n\n"
-        "Answer (use context keywords):"
-    )
-        completion = self.llm.chat.completions.create(
-            model=self.model_id,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
-            temperature=0.1,
-        )
-        return completion.choices[0].message.content.strip()
+    def _answer_question(self, question: str) -> str:
+        """
+        Answer question using RetrievalPipeline's ask_stream method.
+        Automatically logs metrics, costs, and runs to database.
+        """
+        full_answer = ""
+        # ask_stream yields chunks and automatically handles logging
+        for chunk in self.pipeline.ask_stream(question):
+            full_answer += chunk
+        return full_answer
 
     @staticmethod
     def _keyword_overlap_score(prediction: str, reference: str) -> float:
@@ -115,7 +92,8 @@ class EvalPipeline:
                 )
 
             # --- 3. Generator (LLM) Evaluation ---
-            prediction = self._answer_question(question, retrieved_documents)
+            # ask_stream automatically logs runs and cost metrics to database
+            prediction = self._answer_question(question)
             token_f1   = self._keyword_overlap_score(prediction, reference_answer)
 
             results.append({

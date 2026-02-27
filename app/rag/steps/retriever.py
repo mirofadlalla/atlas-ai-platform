@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from pathlib import Path
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -9,8 +10,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from qdrant_client import QdrantClient
-from qdrant_client import models # 👈 التعديل هنا: استدعاء موديلز الفلترة من Qdrant
+from qdrant_client import models
 from app.design_pattern.embedded_model import EmbeddedModel
+
+logger = logging.getLogger(__name__)
 
 qdrant_client = QdrantClient(
     url=os.getenv("QDRANT_URL", "http://localhost:6333")
@@ -19,12 +22,26 @@ qdrant_client = QdrantClient(
 COLLECTION_NAME = "atlas_documents1"
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
+# Cache the embedding model singleton at module level
+_embedding_model = EmbeddedModel()
+_retrievers_cache = {}
+
 def get_retriever(tenant_id: int):
+    """
+    Get or create a retriever for the specified tenant.
+    Uses cached embedding model singleton and caches retrievers per tenant.
+    """
+    # Return cached retriever if available
+    if tenant_id in _retrievers_cache:
+        logger.info(f"Using cached retriever for tenant: {tenant_id}")
+        return _retrievers_cache[tenant_id]
+    
+    logger.info(f"Creating new retriever for tenant: {tenant_id}")
     vectorstore = QdrantVectorStore(
         client=qdrant_client,
         collection_name=COLLECTION_NAME,
         
-        embedding=EmbeddedModel(),
+        embedding=_embedding_model,  # Use singleton instance
         vector_name="dense",
         
         sparse_embedding=sparse_embeddings,
@@ -36,9 +53,9 @@ def get_retriever(tenant_id: int):
         metadata_payload_key="payload" 
     )
 
-    return vectorstore.as_retriever(
+    retriever = vectorstore.as_retriever(
         search_kwargs={
-            "k": 1,
+            "k": 5,
             "filter": models.Filter(
                 must=[
                     models.FieldCondition(
@@ -49,6 +66,10 @@ def get_retriever(tenant_id: int):
             )
         }
     )
+    
+    # Cache the retriever
+    _retrievers_cache[tenant_id] = retriever
+    return retriever
 
 # if __name__ == "__main__":
 #     retriever = get_retriever(123)

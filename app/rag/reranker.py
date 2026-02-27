@@ -53,7 +53,7 @@ class CrossEncoderReranker(Reranker):
     more accurate relevance judgments than bi-encoders alone.
     """
     
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"):
+    def __init__(self, model_name: str = "BAAI/bge-reranker-large"):
         """
         Initialize cross-encoder reranker.
         

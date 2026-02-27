@@ -21,6 +21,7 @@ function Navigation({ user, onLogout }) {
         <div className="nav-links">
           <Link to="/dashboard">Dashboard</Link>
           <Link to="/query">Query</Link>
+          <Link to="/agent">Agent</Link>
           <Link to="/ingest">Ingest Data</Link>
           <Link to="/evaluate">Evaluate</Link>
           <Link to="/analytics">Analytics</Link>

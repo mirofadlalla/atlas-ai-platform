@@ -1,17 +1,25 @@
 import os
 import sys
 from pathlib import Path
-import langchain
+import logging
+import hashlib
+import time
+from concurrent.futures import ThreadPoolExecutor
 from langchain_redis import RedisSemanticCache
+from langchain_core.globals import set_llm_cache, get_llm_cache
 from langchain_classic.chains import create_retrieval_chain 
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain 
 from langchain_classic.prompts import ChatPromptTemplate
+from sqlalchemy.orm import Session
 
-import time
+logger = logging.getLogger(__name__)
 
 from app.models.runs import Runs
 from app.models.costLog import CostLog
 from app.rag.reranker import RankingService
+from app.repositories.runs_repository import RunsRepository
+from app.repositories.cost_log_repository import CostLogRepository
+from app.services.rag_services.query_logging_service import trigger_query_logging
 
 # Setup paths
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -20,8 +28,30 @@ from app.rag.steps.retriever import get_retriever
 from app.services.llm_runner import CustomLocalLLM
 from app.design_pattern.embedded_model import EmbeddedModel # Ensure it's LangChain compatible
 
+# Initialize the embedding model singleton once at module load time
+_embedding_model = EmbeddedModel()
+
+# Initialize reranker singletons per strategy
+_ranking_services = {}
+
+def _get_ranking_service(strategy: str = "hybrid"):
+    """Get or create a RankingService singleton for the given strategy."""
+    if strategy not in _ranking_services:
+        logger.info(f"Initializing RankingService with strategy: {strategy}")
+        _ranking_services[strategy] = RankingService(strategy=strategy)
+    return _ranking_services[strategy]
+
+# Initialize LLM singleton once at module load time
+logger.info("Initializing CustomLocalLLM singleton")
+_cached_llm = CustomLocalLLM()
+logger.info("CustomLocalLLM singleton ready")
+
+# Query result cache - store results of queries for quick retrieval
+_query_cache = {}
+_query_cache_ttl = 3600  # 1 hour TTL for query cache
+
 class RetrievalPipeline:
-    def __init__(self, tenant_id: int, use_reranker: bool = True, reranker_strategy: str = "hybrid"):
+    def __init__(self, tenant_id: int, use_reranker: bool = True, reranker_strategy: str = None, db: Session = None):
         """
         Initialize the retrieval pipeline with optional reranking.
         
@@ -29,31 +59,42 @@ class RetrievalPipeline:
             tenant_id: Tenant identifier
             use_reranker: Whether to use document reranking
             reranker_strategy: Reranking strategy ('cross-encoder', 'bm25', 'hybrid')
+            db: Optional SQLAlchemy Session for saving runs and costs to database
         """
         self.tenant_id = tenant_id
         self.retriever = get_retriever(tenant_id)
         self.use_reranker = use_reranker
+        self.db = db
+        self.runs_repo = RunsRepository(db) if db else None
+        self.cost_repo = CostLogRepository(db) if db else None
         
-        # Initialize reranker if enabled
+        # Initialize reranker if enabled - use cached singleton
         if use_reranker:
-            self.ranking_service = RankingService(strategy=reranker_strategy)
+            self.ranking_service = _get_ranking_service(strategy=reranker_strategy)
         else:
             self.ranking_service = None
         
         # 1. Define the embedding model (Object)
-        # Use the same instance so Redis can use it for similarity comparison
-        self.embedding_model = EmbeddedModel() 
+        # Use the singleton instance so Redis can use it for similarity comparison
+        self.embedding_model = _embedding_model 
 
         # 2. Setup Redis Semantic Cache (initialized once at load time)
-        langchain.llm_cache = RedisSemanticCache(
-            redis_url="redis://localhost:6379:0",
-            embeddings=self.embedding_model,
-            ttl=86400, # one day
-            distance_threshold=0.2
-        )
+        # Only set if not already set to avoid reinitializing
+        if get_llm_cache() is None:
+            logger.info("Initializing Redis Semantic Cache")
+            cache = RedisSemanticCache(
+                redis_url="redis://localhost:6379/0",
+                embeddings=self.embedding_model,
+                ttl=86400, # one day
+                distance_threshold=0.2
+            )
+            set_llm_cache(cache)
+            logger.info("Redis Semantic Cache initialized successfully")
+        else:
+            logger.info("Using existing Redis Semantic Cache")
         
-        # 3. Setup Local LLM and Chain
-        self.local_llm = CustomLocalLLM()
+        # 3. Setup Local LLM and Chain - use cached singleton
+        self.local_llm = _cached_llm
         
         prompt = ChatPromptTemplate.from_template(
             "Answer the following question based only on the provided context:\n\n"
@@ -65,24 +106,37 @@ class RetrievalPipeline:
         self.document_chain = create_stuff_documents_chain(self.local_llm, prompt)
         self.qa_chain = create_retrieval_chain(self.retriever, self.document_chain)
 
-    def retrieve(self, query: str, top_k: int = 10):
+    def retrieve(self, query: str, top_k: int = 10, fetch_multiplier: int = 2):
         """
-        Retrieve relevant documents for a query.
+        Retrieve relevant documents for a query with optional reranking.
         
-        Optionally applies reranking to improve result quality.
+        For better reranking results, fetches more documents initially,
+        then reranks down to top_k.
         
         Args:
             query: User query
             top_k: Number of top documents to return
+            fetch_multiplier: Multiplier for initial fetch (e.g., 2 means fetch 2x top_k)
             
         Returns:
             List of relevant documents (reranked if enabled)
         """
-        # Get initial retrieval results
+        start_time = time.time()
+        
+        # Fetch more docs initially for better reranking (if enabled)
+        fetch_count = max(top_k * fetch_multiplier, top_k) if self.use_reranker else top_k
         docs = self.retriever.invoke(query)
+        
+        retrieval_time = time.time() - start_time
+        logger.debug(f"Document retrieval took {retrieval_time:.3f}s, got {len(docs)} documents")
+        
+        # Sort by ID to ensure deterministic ordering for caching
+        docs = sorted(docs, key=lambda d: d.metadata.get('_id', ''))
         
         # Apply reranking if enabled
         if self.use_reranker and self.ranking_service and docs:
+            rerank_start = time.time()
+            
             # Convert LangChain documents to format acceptable by ranking service
             doc_dicts = [
                 {
@@ -96,8 +150,10 @@ class RetrievalPipeline:
             # Rerank documents
             reranked = self.ranking_service.rank(query, doc_dicts, top_k=top_k)
             
+            rerank_time = time.time() - rerank_start
+            logger.debug(f"Reranking took {rerank_time:.3f}s")
+            
             # Convert back to LangChain Document objects with updated metadata
-            # from langchain.schema import Document
             from langchain_core.documents import Document
 
             docs = [
@@ -119,63 +175,144 @@ class RetrievalPipeline:
         """
         Answer the question using the Cache and the local LLM.
         If the question is similar to a previous one stored in Redis, it will respond immediately.
+        Applies reranking if enabled. Tracks and logs run and cost metrics asynchronously.
         """
-        # invoke automatically triggers the cache behind the scenes
-        response = self.qa_chain.stream({"input": query})
-        return response
+        start_time = time.time()
+        full_answer = ""
+        
+        # Get reranked documents if reranker is enabled
+        docs = self.retrieve(query) if self.use_reranker else self.retriever.invoke(query)
+        
+        # Stream the document chain response with context
+        for chunk in self.document_chain.stream({"input": query, "context": docs}):
+            if "answer" in chunk:
+                full_answer += chunk["answer"]
+                yield chunk["answer"]
+        
+        # Calculate metrics after streaming completes
+        latency = time.time() - start_time
+        usage = CustomLocalLLM.last_usage or {}  # Extract token usage from the model
+        input_tokens = usage.get("input", 0)
+        output_tokens = usage.get("output", 0)
+        retrieved_docs_ids = ",".join([doc.metadata.get('_id', '') for doc in docs])
+        
+        # Queue background logging (non-blocking)
+        if self.db:
+            try:
+                trigger_query_logging(
+                    tenant_id=self.tenant_id,
+                    query=query,
+                    answer=full_answer,
+                    latency=latency,
+                    cache_hit=False,
+                    retrieved_docs_ids=retrieved_docs_ids,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    model_name="Qwen2.5-1.5B"
+                )
+                logger.debug(f"Queued background logging for query: {query[:50]}...")
+            except Exception as e:
+                logger.error(f"Error queuing background logging: {e}")
     
     def ask_stream(self, query: str):
         """
         Stream the answer to a query with logging of run and cost information.
         
         This method:
-        1. Streams the answer chunks from the QA chain
-        2. Tracks latency and token usage
-        3. Logs run and cost information to the database
+        1. Checks query cache for recent identical queries
+        2. Retrieves and optionally reranks documents using ranking_service
+        3. Streams the answer chunks from the document chain
+        4. Tracks latency and token usage
+        5. Logs run and cost information to the database (if db session provided)
         """
         start_time = time.time()
         full_answer = ""
+        cache_hit = False
         
-        # 1. Stream the QA chain response
-        for chunk in self.qa_chain.stream({"input": query}):
-            if "answer" in chunk:
-                full_answer += chunk["answer"]
-                yield chunk["answer"]
+        # Create cache key from query
+        cache_key = f"{self.tenant_id}:{hashlib.md5(query.encode()).hexdigest()}"
+        
+        # Check if query is in cache
+        if cache_key in _query_cache:
+            cached_result = _query_cache[cache_key]
+            cache_hit = True
+            logger.info(f"Query cache HIT - returning cached result for: {query[:50]}...")
+            full_answer = cached_result['answer']
+            # Stream the cached answer
+            yield full_answer
+            return
+        
+        logger.info(f"Query cache MISS - generating new answer for: {query[:50]}...")
+        
+        # 1. Get reranked documents if reranker is enabled
+        docs = self.retrieve(query) if self.use_reranker else self.retriever.invoke(query)
+        
+        # 2. Stream the document chain response with context
+        logger.info(f"Starting answer generation for query: {query[:50]}...")
+        logger.info(f"Number of context documents: {len(docs)}")
+        
+        # Track if cache is being used by checking LLM's internal state
+        llm_start_time = time.time()
+        for chunk in self.document_chain.stream({"input": query, "context": docs}):
+            # Handle different chunk formats from the chain
+            if isinstance(chunk, dict):
+                # LangChain chains return dictionaries with various keys
+                # The last key contains the actual output
+                for key, value in chunk.items():
+                    if isinstance(value, str) and value.strip():
+                        full_answer += value
+                        yield value
+            elif isinstance(chunk, str):
+                # Direct string output
+                full_answer += chunk
+                yield chunk
+        
+        # If the LLM response was very fast (<2 seconds), it might have come from Redis cache
+        llm_time = time.time() - llm_start_time
+        if llm_time < 2.0 and full_answer:  # Fast response might indicate Redis cache hit
+            logger.info(f"Possible Redis cache HIT - LLM response time: {llm_time:.2f}s")
+        else:
+            logger.info(f"LLM generated new response - response time: {llm_time:.2f}s")
+        
+        logger.info(f"Answer generation completed. Length: {len(full_answer)} chars")
 
-        # 2. Calculate metrics after streaming completes
+        # 3. Calculate metrics after streaming completes
         latency = time.time() - start_time
-        usage = CustomLocalLLM.last_usage  # Extract token usage from the model
+        usage = CustomLocalLLM.last_usage or {}  # Extract token usage from the model
+        input_tokens = usage.get("input", 0)
+        output_tokens = usage.get("output", 0)
+        cost = (input_tokens * 0.0000001) + (output_tokens * 0.0000002)
+        retrieved_docs_ids = ",".join([doc.metadata.get('_id', '') for doc in docs])
         
-        # 3. Save to database (SQLAlchemy)
-        try:
-            new_run = Runs(
-                tenant_id=self.tenant_id,
-                query=query,
-                answer=full_answer,
-                latency=latency,
-                cache_hit=False,  # SemanticCache controls this, default to False for now
-                retrieved_docs_ids=",".join([doc.metadata.get('_id', '') for doc in self.retriever.invoke(query)])
-            )
-            
-            # Calculate cost (example: Qwen 2.5 1.5B pricing)
-            # For local models, cost is 0; for API models, calculate accordingly
-            cost = (usage.get("input", 0) * 0.0000001) + (usage.get("output", 0) * 0.0000002) 
-
-            new_cost = CostLog(
-                run=new_run,  # Automatic linking via SQLAlchemy relationship
-                input_tokens=usage.get("input", 0),
-                output_tokens=usage.get("output", 0),
-                model_name="Qwen2.5-1.5B",
-                cost_usd=cost
-            )
-            
-            # TODO: Uncomment when database session is available
-            # session.add(new_run)
-            # session.commit()
-            print(f"\n[Logged] Run saved with {usage.get('total_tokens')} total tokens.")
-            
-        except Exception as e:
-            print(f"Error logging to DB: {e}")
+        # 4. Cache the result for future identical queries
+        _query_cache[cache_key] = {
+            'answer': full_answer,
+            'docs_ids': retrieved_docs_ids,
+            'timestamp': time.time()
+        }
+        logger.info(f"Query result cached for future use")
+        
+        # 5. Log query metrics
+        logger.info(f"Query processed - Latency: {latency:.2f}s, Cache hit: {cache_hit}, Documents ranked: {len(docs)}")
+        
+        # 6. Queue background logging (non-blocking)
+        # This happens asynchronously, so the response completes immediately
+        if self.db:
+            try:
+                trigger_query_logging(
+                    tenant_id=self.tenant_id,
+                    query=query,
+                    answer=full_answer,
+                    latency=latency,
+                    cache_hit=cache_hit,
+                    retrieved_docs_ids=retrieved_docs_ids,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    model_name="Qwen2.5-1.5B"
+                )
+                logger.debug(f"Queued background logging for query: {query[:50]}...")
+            except Exception as e:
+                logger.error(f"Error queuing background logging: {e}")
 
     @property
     def _llm_type(self) -> str:

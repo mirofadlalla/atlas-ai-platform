@@ -2,7 +2,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.routes import auth_route, ingest_rag_route, eval_pipline, query_route
+from app.routes import auth_route, ingest_rag_route, eval_pipline, query_route, agent_route
+
+from logging_setup import setup_logging
+
+setup_logging() # Initialize logging For docker logs and Sentry
+
+import sentry_sdk
+from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
+
+import os
+
+# Initialize Sentry for error tracking
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    traces_sample_rate=1.0
+)
+
 # from app.design_pattern.embedded_model import EmbeddedModel
 
 # @asynccontextmanager
@@ -35,3 +51,21 @@ app.include_router(auth_route.router, prefix="/api", tags=["Authentication"])
 app.include_router(ingest_rag_route.router, prefix="/api", tags=["ingest-rag"])
 app.include_router(eval_pipline.router, prefix="/api", tags=["eval-rag"])
 app.include_router(query_route.router, prefix="/api", tags=["query"])
+app.include_router(agent_route.router, prefix="/api", tags=["agent"])
+
+
+app.add_middleware(SentryAsgiMiddleware)
+
+from prometheus_client import Counter, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
+
+# Create a Prometheus counter for tracking the number of requests
+request_count = Counter("fastapi_requests_total", "Total number of requests")
+
+# Create a Prometheus histogram for tracking request duration
+request_duration = Histogram("fastapi_request_duration_seconds", "Request duration in seconds")
+
+# Initialize the Prometheus instrumentator
+
+# Register the instrumentator with the FastAPI app
+Instrumentator().instrument(app)

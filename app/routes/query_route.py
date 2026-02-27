@@ -14,8 +14,6 @@ from app.core.rate_limitizer import rate_limit
 from app.schema.query_request import QueryRequest
 from app.rag.retrivel_data_pipline import RetrievalPipeline
 from app.services.mlflow_service import MLflowService
-from app.repositories.runs_repository import RunsRepository
-from app.repositories.cost_log_repository import CostLogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -78,19 +76,16 @@ async def ask_question(
         mlflow.log_param("query_length", len(request.query))
         mlflow.log_param("user_id", current_user or "anonymous")
         
-        # Create pipeline for this tenant
-        pipeline = RetrievalPipeline(tenant_id=tenant_id)
+        # Create pipeline for this tenant with database session for automatic logging
+        pipeline = RetrievalPipeline(tenant_id=tenant_id, db=db)
         
         # Start timing
         start_time = time.time()
         
-        # Initialize repositories for logging
-        runs_repo = RunsRepository(db)
-        cost_repo = CostLogRepository(db)
-        
         async def answer_generator():
             """
-            Generator that yields answer chunks and logs metrics after completion.
+            Generator that yields answer chunks.
+            Metrics and costs are automatically logged by RetrievalPipeline.
             """
             full_answer = ""
             latency = 0
@@ -100,46 +95,23 @@ async def ask_question(
             cache_hit = False
             
             try:
-                # Stream answer
+                # Stream answer - pipeline handles metric logging automatically
                 for chunk in pipeline.ask_stream(query=request.query):
                     full_answer += chunk
                     yield chunk
                 
-                # Calculate metrics
+                # Calculate latency
                 latency = time.time() - start_time
                 
-                # Get token usage from the LLM (if available)
+                # Get token usage from the LLM (if available) for MLflow logging
                 try:
                     from app.services.llm_runner import CustomLocalLLM
                     usage = CustomLocalLLM.last_usage or {}
                     input_tokens = usage.get("input", 0)
                     output_tokens = usage.get("output", 0)
-                    
-                    # Calculate cost based on token usage
-                    # Example pricing for Qwen 2.5 1.5B (adjust based on actual pricing)
                     cost_usd = (input_tokens * 0.0000001) + (output_tokens * 0.0000002)
                 except:
                     pass
-                
-                # Save run to database
-                run = runs_repo.create(
-                    tenant_id=tenant_id,
-                    query=request.query,
-                    answer=full_answer[:1000],  # Store first 1000 chars in DB
-                    latency=latency,
-                    cache_hit=cache_hit,
-                    retrieved_docs_ids=""
-                )
-                
-                # Save cost log if there are tokens
-                if input_tokens > 0 or output_tokens > 0:
-                    cost_repo.create(
-                        run_id=run.run_id,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        model_name="Local-LLM",
-                        cost_usd=cost_usd
-                    )
                 
                 # Log metrics to MLflow
                 mlflow.log_metric("latency_seconds", latency)
@@ -150,7 +122,7 @@ async def ask_question(
                 
                 logger.info(
                     f"Query completed - Tenant: {tenant_id}, User: {current_user}, "
-                    f"Latency: {latency:.2f}s, Cost: ${cost_usd:.6f}, Run ID: {run.run_id}"
+                    f"Latency: {latency:.2f}s, Cost: ${cost_usd:.6f}"
                 )
                 
             except Exception as e:
@@ -229,4 +201,113 @@ async def retrieve_documents(
         
     except Exception as e:
         logger.error(f"Error retrieving documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/cost-analytics")
+async def get_cost_analytics(
+    current_user: str = Header(None, alias="current-user"),
+    tenant_id: str = Header(..., alias="tenant-id"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get cost analytics for the current tenant.
+    
+    Returns:
+        dict: Cost breakdown by model, date, and total costs
+    """
+    try:
+        from app.repositories.cost_log_repository import CostLogRepository
+        from app.repositories.runs_repository import RunsRepository
+        from sqlalchemy import func
+        
+        # Get total costs
+        cost_repo = CostLogRepository(db)
+        runs_repo = RunsRepository(db)
+        
+        # Query total cost and token usage
+        cost_data = db.query(
+            func.sum(cost_repo.model.cost_usd).label('total_cost'),
+            func.sum(cost_repo.model.input_tokens).label('total_input_tokens'),
+            func.sum(cost_repo.model.output_tokens).label('total_output_tokens'),
+            cost_repo.model.model_name
+        ).filter(
+            # Join with runs to filter by tenant
+            cost_repo.model.run_id == runs_repo.model.run_id,
+            runs_repo.model.tenant_id == tenant_id
+        ).group_by(cost_repo.model.model_name).all()
+        
+        analytics = {
+            "total_cost": 0.0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "by_model": []
+        }
+        
+        for row in cost_data:
+            if row.total_cost:
+                analytics["total_cost"] += float(row.total_cost)
+            if row.total_input_tokens:
+                analytics["total_input_tokens"] += int(row.total_input_tokens)
+            if row.total_output_tokens:
+                analytics["total_output_tokens"] += int(row.total_output_tokens)
+            
+            analytics["by_model"].append({
+                "model": row.model_name,
+                "cost": float(row.total_cost) if row.total_cost else 0.0,
+                "input_tokens": int(row.total_input_tokens) if row.total_input_tokens else 0,
+                "output_tokens": int(row.total_output_tokens) if row.total_output_tokens else 0
+            })
+        
+        logger.info(f"Cost analytics retrieved for tenant: {tenant_id}")
+        return analytics
+        
+    except Exception as e:
+        logger.error(f"Error retrieving cost analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/runs")
+async def get_runs(
+    current_user: str = Header(None, alias="current-user"),
+    tenant_id: str = Header(..., alias="tenant-id"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all query runs for the current tenant.
+    
+    Returns:
+        list: Recent query runs with latency and document info
+    """
+    try:
+        from app.repositories.runs_repository import RunsRepository
+        from app.models.runs import Runs
+        from sqlalchemy import desc
+        
+        runs_repo = RunsRepository(db)
+        
+        # Get last 50 runs
+        runs = db.query(Runs).filter(
+            Runs.tenant_id == tenant_id
+        ).order_by(desc(Runs.created_at)).limit(50).all()
+        
+        runs_list = []
+        for run in runs:
+            runs_list.append({
+                "run_id": str(run.run_id),
+                "query": run.query[:100],  # Truncate for display
+                "answer": run.answer[:200] if run.answer else "",
+                "latency": float(run.latency) if run.latency else 0.0,
+                "cache_hit": run.cache_hit,
+                "retrieved_docs_ids": run.retrieved_docs_ids,
+                "created_at": run.created_at.isoformat() if run.created_at else None
+            })
+        
+        logger.info(f"Runs retrieved for tenant: {tenant_id}, count: {len(runs_list)}")
+        return {
+            "runs": runs_list,
+            "count": len(runs_list)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving runs: {e}")
         raise HTTPException(status_code=500, detail=str(e))

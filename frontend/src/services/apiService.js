@@ -55,7 +55,6 @@ class ApiService {
           localStorage.setItem('user', JSON.stringify(updatedUser));
           // Update local variables
           user = updatedUser;
-          userId = userId;
           userRole = userRole || user.role;
           tenantId = tenantId || user.tenant_id;
         }
@@ -68,7 +67,6 @@ class ApiService {
     // Validate that userId is actually a UUID, not an email
     // UUIDs are typically in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
     const isEmail = userId && userId.includes('@');
-    const isUUID = userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
     
     if (isEmail) {
       console.error('ERROR: User ID appears to be an email address instead of UUID:', userId);
@@ -336,6 +334,34 @@ class ApiService {
   async getRuns() {
     const response = await fetch(`${this.baseURL}/query/runs`, {
       headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  // Agent endpoints
+  async askAgent(question, tenantId) {
+    const response = await fetch(`${this.baseURL}/agent/ask-agent`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        question,
+      }),
+    });
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: response.body,
+    };
+  }
+
+  async askAgentBatch(question, tenantId) {
+    const response = await fetch(`${this.baseURL}/agent/ask-agent-batch`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        question,
+      }),
     });
     return this.handleResponse(response);
   }

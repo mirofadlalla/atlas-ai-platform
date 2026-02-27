@@ -15,12 +15,13 @@ default_exchange = Exchange("atlas_ai_exchange" , type="direct")
 celery_app.conf.task_queues = (
     Queue("ingest_data_queue" , default_exchange , routing_key="ingest"),
     Queue("eval_data_queue" , default_exchange , routing_key="eval"),
+    Queue("logging_queue" , default_exchange , routing_key="logging"),
     Queue("queue_dead" , default_exchange , routing_key="dead"),
 )
 
-celery_app.conf.task_default_queue = "ingest_data_queue"
+celery_app.conf.task_default_queue = "logging_queue"
 celery_app.conf.task_default_exchange = "atlas_ai_exchange"
-celery_app.conf.task_default_routing_key = "default"
+celery_app.conf.task_default_routing_key = "logging"
 
 
 celery_app.conf.task_routes = {
@@ -31,6 +32,10 @@ celery_app.conf.task_routes = {
     "app.services.eval_rag_service.evaluate_task": {
         "queue": "eval_data_queue",
         "routing_key": "eval",
+    },
+    "app.services.rag_services.query_logging_service.log_query_run_and_cost": {
+        "queue": "logging_queue",
+        "routing_key": "logging",
     },
 }
 
