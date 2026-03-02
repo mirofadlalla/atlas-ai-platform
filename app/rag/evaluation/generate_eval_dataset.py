@@ -27,13 +27,12 @@ from langchain_core.messages import HumanMessage
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+
 QDRANT_URL      = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = "atlas_documents1"
 TENANT_ID       = "1234"           # change to your tenant
 OUTPUT_PATH     = Path(__file__).parent / "evaluation_dataset.json"
 MAX_CHUNKS      = 30               # how many chunks to generate questions from
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def fetch_points(tenant_id: str, max_chunks: int = MAX_CHUNKS) -> list[dict]:

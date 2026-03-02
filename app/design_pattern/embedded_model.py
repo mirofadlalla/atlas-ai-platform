@@ -15,7 +15,7 @@ class EmbeddedModel(Embeddings):
                     print("Initializing embedding model for the first time")
                     cls._instance = super().__new__(cls)
                     cls._instance.model = None  # Placeholder for the actual model instance
-                    cls._instance._load_model()  # Load the model during initialization
+                    # cls._instance._load_model()  # Load the model during initialization
         return cls._instance
 
     def _load_model(self):
@@ -35,17 +35,17 @@ class EmbeddedModel(Embeddings):
                 self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        # self._load_model()
+        self._load_model()
         embeddings = self.model.encode(texts,normalize_embeddings=True,batch_size=16 )
         return embeddings.tolist()
 
     def embed_query(self, text: str) -> List[float]:
-        # self._load_model()
+        self._load_model()
         embedding = self.model.encode(text,normalize_embeddings=True,batch_size=16)
         return embedding.tolist()
 
 
-# use for testing
+# # use for testing
 # import os
 # import threading
 # import logging

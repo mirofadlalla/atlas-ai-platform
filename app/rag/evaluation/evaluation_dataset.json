@@ -1,19 +1,6 @@
 [
   {
     "id": "q_001",
-    "question": "What was the growth in Google Search & other revenues from 2022 to 2023?",
-    "answer": "$12.6 billion",
-    "relevant_ids": [
-      "001b6c1f-9fd0-4b39-17ab-a000dfba4b74"
-    ],
-    "paraphrases": [
-      "What was the increase in Google Search & other revenues between 2022 and 2023?",
-      "By how much did Google Search & other revenues rise from 2022 to 2023?"
-    ],
-    "_source_chunk": "• On July 21, 2023, the IRS announced a rule change allowing taxpayers to temporarily apply the regulations in \neffect prior to 2022 related to U.S. federal foreign tax credits. This announcement applies to foreign taxes paid \nor accrued in the fiscal years 2022 and 2023. A cumulative one-time adjus"
-  },
-  {
-    "id": "q_002",
     "question": "What metrics are used to track how well traffic across various properties is monetized as it relates to Google advertising revenues?",
     "answer": "paid clicks and cost-per-click pertain to traffic on Google Search & other properties, while impressions and cost-per-impression pertain to traffic on our Google Network properties.",
     "relevant_ids": [
@@ -26,46 +13,7 @@
     "_source_chunk": "• changes in pricing, such as those resulting from changes in fee structures, discounts, and customer incentives;\n• general economic conditions and various external dynamics, including geopolitical events,  regulations, and \nother measures and their effect on advertiser, consumer, and enterprise spe"
   },
   {
-    "id": "q_003",
-    "question": "What is the amount of new operating lease liabilities?",
-    "answer": "$ 4,383",
-    "relevant_ids": [
-      "00fde190-1d84-3184-59fe-b5bef91c4c78"
-    ],
-    "paraphrases": [
-      "What is the value of the new operating lease liabilities?",
-      "How much were the new operating lease liabilities for?"
-    ],
-    "_source_chunk": "New operating lease assets obtained in exchange for \noperating lease liabilities $ 2,951 $ 4,383 $ 2,877 \nTable of Contents Alphabet Inc. 71."
-  },
-  {
-    "id": "q_004",
-    "question": "What is the number assigned to the following document chunk?",
-    "answer": "25",
-    "relevant_ids": [
-      "01da1842-13cf-8a57-92b4-d07dc6eee545"
-    ],
-    "paraphrases": [
-      "What is the document number?",
-      "What is the assigned number for this document?"
-    ],
-    "_source_chunk": "25."
-  },
-  {
-    "id": "q_005",
-    "question": "What is the date of the Description of Registrant’s Securities Annual Report on Form 10-K?",
-    "answer": "August 5, 2020",
-    "relevant_ids": [
-      "032b98a2-bd3d-a51d-c5b4-e4c1fb5f144a"
-    ],
-    "paraphrases": [
-      "What date is mentioned for the Description of Registrant’s Securities Annual Report on Form 10-K?",
-      "When was the Description of Registrant’s Securities Annual Report on Form 10-K filed?"
-    ],
-    "_source_chunk": "(File No. 001-37580)\nAugust 5, 2020\n4.20 Description of Registrant’s Securities Annual Report on Form 10-K \n(File No. 001-37580)\nFebruary 3, 2023\n10.01 u Form of Indemnification Agreement entered \ninto between the Registrant, its affiliates and \nits directors and officers \nCurrent Report on Form 8-K"
-  },
-  {
-    "id": "q_006",
+    "id": "q_002",
     "question": "What method is used to compute the dilutive effect of outstanding RSUs and other contingently issuable shares?",
     "answer": "The treasury stock method",
     "relevant_ids": [
@@ -78,7 +26,7 @@
     "_source_chunk": "Note 12. Net Income Per Share \nWe compute net income per share of Class A, Class B, and Class C stock using the two-class method. Basic net \nincome per share is computed using the weighted-average number of shares outstanding during the period. Diluted net \nincome per share is computed using the wei"
   },
   {
-    "id": "q_007",
+    "id": "q_003",
     "question": "What is the title of the document?",
     "answer": "Inventory",
     "relevant_ids": [
@@ -91,7 +39,7 @@
     "_source_chunk": "Inventory"
   },
   {
-    "id": "q_008",
+    "id": "q_004",
     "question": "What is the page number of the Consolidated Balance Sheets in the financial statements?",
     "answer": "51",
     "relevant_ids": [

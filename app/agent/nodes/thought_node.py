@@ -87,19 +87,17 @@ def thought_node(state: AgentState):
     
     actions_context = "\n".join(f"- {a}" for a in actions_taken) if actions_taken else "None yet"
     
-    # Determine if this is a data question or knowledge question
+    # Use intelligent classification instead of fixed keyword lists
     question_lower = state['question'].lower()
-    sql_keywords = ['how many', 'count', 'total', 'average', 'sum', 'number of', 'revenue', 'stats', 'statistics', 'report', 'users registered', 'products sold', 'total amount']
-    retrieval_keywords = ['what is', 'explain', 'describe', 'how does', 'access control', 'definition', 'tell me about', 'information about']
     
-    appears_to_need_sql = any(kw in question_lower for kw in sql_keywords)
-    appears_to_need_retrieval = any(kw in question_lower for kw in retrieval_keywords)
+    # Get question classification from helper function
+    question_type = _classify_question_type(state['question'])
     
     # Build more specific guidance based on question type
-    if appears_to_need_sql and not appears_to_need_retrieval:
-        action_guidance = "This question asks for QUANTITATIVE DATA. Use SQL query to get actual numbers from the database."
-    elif appears_to_need_retrieval and not appears_to_need_sql:
-        action_guidance = "This question asks for KNOWLEDGE/INFORMATION. Use RETRIEVAL to search knowledge base documents."
+    if question_type == "data":
+        action_guidance = "This question asks for QUANTITATIVE DATA (numbers, counts, statistics). Use SQL query to get actual data from the database."
+    elif question_type == "knowledge":
+        action_guidance = "This question asks for KNOWLEDGE/INFORMATION/EXPLANATIONS. Use RETRIEVAL to search knowledge base documents and get explanations."
     else:
         action_guidance = "Analyze the question to determine if it needs DATA (SQL) or KNOWLEDGE (RETRIEVAL)."
     
@@ -175,24 +173,20 @@ def _parse_action_decision(response_text: str, state: AgentState, question_lower
         # Fallback: use keyword detection
         next_action = _fallback_action_detection(question_lower, state)
     
-    # Apply safety overrides
+    # Apply safety overrides using intelligent classification
     has_queried_sql = bool(state.get('last_sql'))
     has_retrieved_docs = bool(state.get('retrieval_context'))
     
-    sql_keywords = ['how many', 'count', 'total', 'average', 'sum', 'number of', 'revenue', 'stats', 'statistics', 'report', 'users registered', 'products sold']
-    retrieval_keywords = ['what is', 'explain', 'describe', 'how does', 'access control', 'definition', 'tell me about', 'information about', 'definition of']
-    
-    needs_sql_data = any(kw in question_lower for kw in sql_keywords)
-    needs_retrieval_data = any(kw in question_lower for kw in retrieval_keywords)
+    question_type = _classify_question_type(question_lower)
     
     # Override: if question clearly needs data but tries to finish without data, force appropriate action
     if next_action == 'finish' and not has_queried_sql and not has_retrieved_docs:
-        if needs_sql_data:
+        if question_type == 'data':
             next_action = 'sql'
-            print(f"Override: Forcing SQL for '{question_lower[:50]}...'")
-        elif needs_retrieval_data:
+            print(f"Override: Forcing SQL for data question: '{question_lower[:50]}...'")
+        elif question_type == 'knowledge':
             next_action = 'retrieval'
-            print(f"Override: Forcing RETRIEVAL for '{question_lower[:50]}...'")
+            print(f"Override: Forcing RETRIEVAL for knowledge question: '{question_lower[:50]}...'")
     
     return next_action
 
@@ -200,7 +194,7 @@ def _parse_action_decision(response_text: str, state: AgentState, question_lower
 def _fallback_action_detection(question_lower: str, state: AgentState) -> str:
     """
     Fallback action detection when JSON parsing fails.
-    Uses keyword matching to determine appropriate action.
+    Uses intelligent question classification instead of keyword matching.
     
     Args:
         question_lower: Lowercased question
@@ -212,18 +206,68 @@ def _fallback_action_detection(question_lower: str, state: AgentState) -> str:
     has_queried_sql = bool(state.get('last_sql'))
     has_retrieved_docs = bool(state.get('retrieval_context'))
     
-    sql_keywords = ['how many', 'count', 'total', 'average', 'sum', 'number of', 'revenue', 'stats', 'statistics', 'report']
-    retrieval_keywords = ['what is', 'explain', 'describe', 'how does', 'access control', 'definition', 'tell me about', 'information about']
+    # Classify question type intelligently
+    question_type = _classify_question_type(question_lower)
     
-    # Check for data questions
-    if any(kw in question_lower for kw in sql_keywords):
-        if not has_queried_sql:
-            return 'sql'
-    
-    # Check for knowledge questions
-    if any(kw in question_lower for kw in retrieval_keywords):
-        if not has_retrieved_docs:
-            return 'retrieval'
+    # Route based on question type
+    if question_type == 'data' and not has_queried_sql:
+        return 'sql'
+    elif question_type == 'knowledge' and not has_retrieved_docs:
+        return 'retrieval'
     
     # Default to finish if we've tried data gathering
     return 'finish'
+
+
+def _classify_question_type(question: str) -> str:
+    """
+    Intelligently classify a question as 'data', 'knowledge', or 'mixed'.
+    Uses linguistic patterns to determine if question seeks:
+    - DATA: numbers, counts, statistics, specific values from database
+    - KNOWLEDGE: explanations, definitions, information, concepts, how-tos
+    
+    Args:
+        question: The user's question
+        
+    Returns:
+        str: 'data', 'knowledge', or 'mixed'
+    """
+    question_lower = question.lower().strip()
+    
+    # Quantitative/Data indicators - asking for specific numbers or measurements
+    data_patterns = [
+        'how many', 'how much', 'count', 'total', 'sum', 'average', 'what % of',
+        'what is the total', 'what is the count', 'how many registered',
+        'number of', 'amount of', 'statistics', 'report', 'revenue', 'sales',
+        'percentage of', 'breakdown of', 'distribution of'
+    ]
+    
+    # Knowledge/Conceptual indicators - asking for explanations or information
+    knowledge_patterns = [
+        'what is', 'what are', 'explain', 'describe', 'definition', 'tell me about',
+        'how does', 'how to', 'why', 'information about', 'what does', 'list the',
+        'get me', 'show me', 'give me', 'provide', 'import', 'architecture',
+        'structure', 'benefit', 'advantage', 'feature', 'capability', 'improve'
+    ]
+    
+    # Count matches for each pattern
+    data_matches = sum(1 for pattern in data_patterns if pattern in question_lower)
+    knowledge_matches = sum(1 for pattern in knowledge_patterns if pattern in question_lower)
+    
+    # Simple decision logic
+    if data_matches > knowledge_matches and data_matches > 0:
+        return 'data'
+    elif knowledge_matches > data_matches and knowledge_matches > 0:
+        return 'knowledge'
+    
+    # If unclear, use question length heuristic
+    # Longer questions asking for explanation tend to be knowledge questions
+    if len(question) > 50 and any(word in question_lower.split() for word in ['explain', 'what', 'how']):
+        return 'knowledge'
+    
+    # Default: if it looks like asking for specific values/counts
+    if any(pattern in question_lower for pattern in ['how many', 'count', 'total', 'number']):
+        return 'data'
+    
+    # Otherwise default to knowledge (better to return docs than wrong query)
+    return 'knowledge'
