@@ -20,6 +20,7 @@ from app.rag.reranker import RankingService
 from app.repositories.runs_repository import RunsRepository
 from app.repositories.cost_log_repository import CostLogRepository
 from app.services.rag_services.query_logging_service import trigger_query_logging
+from app.core.config import settings  # Import settings for Redis config
 
 # Setup paths
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -81,15 +82,28 @@ class RetrievalPipeline:
         # 2. Setup Redis Semantic Cache (initialized once at load time)
         # Only set if not already set to avoid reinitializing
         if get_llm_cache() is None:
-            logger.info("Initializing Redis Semantic Cache")
-            cache = RedisSemanticCache(
-                redis_url="redis://localhost:6379/0",
-                embeddings=self.embedding_model,
-                ttl=86400, # one day
-                distance_threshold=0.2
-            )
-            set_llm_cache(cache)
-            logger.info("Redis Semantic Cache initialized successfully")
+            logger.info(f"Initializing Redis Semantic Cache at {settings.redis_host}:{settings.redis_port}")
+            try:
+                import redis
+                # Test Redis connection first
+                logger.info(f"Testing Redis connection to {settings.REDIS_URL_NO_DB}...")
+                redis_client = redis.from_url(settings.REDIS_URL_NO_DB)
+                redis_client.ping()
+                logger.info("✅ Redis connection verified")
+                
+                cache = RedisSemanticCache(
+                    redis_url=settings.REDIS_URL_NO_DB,
+                    embeddings=self.embedding_model,
+                    ttl=86400, # one day
+                    distance_threshold=0.2
+                )
+                set_llm_cache(cache)
+                logger.info("✅ Redis Semantic Cache initialized successfully - LLM responses will be cached with TTL: 24h, Distance threshold: 0.2")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Redis cache: {e}")
+                logger.warning("Continuing without Redis cache - LLM responses will NOT be cached")
+                logger.info("Troubleshooting: Ensure Redis is running and accessible at " + settings.REDIS_URL_NO_DB)
+                set_llm_cache(None)
         else:
             logger.info("Using existing Redis Semantic Cache")
         
@@ -224,35 +238,66 @@ class RetrievalPipeline:
         3. Streams the answer chunks from the document chain
         4. Tracks latency and token usage
         5. Logs run and cost information to the database (if db session provided)
+        
+        Three-layer caching:
+        1. Local query cache (_query_cache) - stores full query+answer results
+        2. Redis Semantic Cache - caches LLM responses for similar queries
+        3. Database - logs all queries for analytics
         """
         start_time = time.time()
         full_answer = ""
         cache_hit = False
+        cache_source = "NONE"  # Track where the cache hit came from
         
         # Create cache key from query
         cache_key = f"{self.tenant_id}:{hashlib.md5(query.encode()).hexdigest()}"
         
-        # Check if query is in cache
+        # 1. Check local query cache first (fastest)
         if cache_key in _query_cache:
             cached_result = _query_cache[cache_key]
             cache_hit = True
-            logger.info(f"Query cache HIT - returning cached result for: {query[:50]}...")
+            cache_source = "LOCAL_MEMORY"
+            logger.info(f"[⚡ CACHE HIT - LOCAL MEMORY] Returning cached result for: {query[:50]}...")
             full_answer = cached_result['answer']
             # Stream the cached answer
             yield full_answer
+            # Log the cached query
+            latency = time.time() - start_time
+            usage = CustomLocalLLM.last_usage or {}
+            input_tokens = usage.get("input", 0)
+            output_tokens = usage.get("output", 0)
+            retrieved_docs_ids = cached_result.get('docs_ids', '')
+            if self.db:
+                try:
+                    trigger_query_logging(
+                        tenant_id=self.tenant_id,
+                        query=query,
+                        answer=full_answer,
+                        latency=latency,
+                        cache_hit=True,
+                        retrieved_docs_ids=retrieved_docs_ids,
+                        input_tokens=0,
+                        output_tokens=0,
+                        model_name="Qwen2.5-1.5B (CACHED)"
+                    )
+                    logger.debug(f"Logged cached query execution")
+                except Exception as e:
+                    logger.error(f"Error logging cached query: {e}")
             return
         
-        logger.info(f"Query cache MISS - generating new answer for: {query[:50]}...")
+        logger.info(f"[🔄 CACHE MISS - LOCAL MEMORY] Generating new answer for: {query[:50]}...")
         
-        # 1. Get reranked documents if reranker is enabled
+        # 2. Get reranked documents if reranker is enabled
         docs = self.retrieve(query) if self.use_reranker else self.retriever.invoke(query)
         
-        # 2. Stream the document chain response with context
+        # 3. Stream the document chain response with context
         logger.info(f"Starting answer generation for query: {query[:50]}...")
         logger.info(f"Number of context documents: {len(docs)}")
         
-        # Track if cache is being used by checking LLM's internal state
+        # Track if Redis cache is being used by checking LLM's internal state
         llm_start_time = time.time()
+        redis_cache = get_llm_cache()  # Get current cache
+        
         for chunk in self.document_chain.stream({"input": query, "context": docs}):
             # Handle different chunk formats from the chain
             if isinstance(chunk, dict):
@@ -267,16 +312,20 @@ class RetrievalPipeline:
                 full_answer += chunk
                 yield chunk
         
-        # If the LLM response was very fast (<2 seconds), it might have come from Redis cache
+        # Check if response came from Redis cache
         llm_time = time.time() - llm_start_time
-        if llm_time < 2.0 and full_answer:  # Fast response might indicate Redis cache hit
-            logger.info(f"Possible Redis cache HIT - LLM response time: {llm_time:.2f}s")
+        if llm_time < 1.5 and full_answer and redis_cache:  # Very fast response with Redis available
+            logger.info(f"[⚡ POSSIBLE REDIS CACHE HIT] LLM response time: {llm_time:.2f}s")
+            cache_source = "REDIS"
+            cache_hit = True
         else:
-            logger.info(f"LLM generated new response - response time: {llm_time:.2f}s")
+            logger.info(f"[🔄 LLM GENERATED NEW RESPONSE] Response time: {llm_time:.2f}s (Redis available: {redis_cache is not None})")
+            cache_source = "LLM_GENERATED"
+            cache_hit = False
         
         logger.info(f"Answer generation completed. Length: {len(full_answer)} chars")
 
-        # 3. Calculate metrics after streaming completes
+        # 4. Calculate metrics after streaming completes
         latency = time.time() - start_time
         usage = CustomLocalLLM.last_usage or {}  # Extract token usage from the model
         input_tokens = usage.get("input", 0)
@@ -284,18 +333,18 @@ class RetrievalPipeline:
         cost = (input_tokens * 0.0000001) + (output_tokens * 0.0000002)
         retrieved_docs_ids = ",".join([doc.metadata.get('_id', '') for doc in docs])
         
-        # 4. Cache the result for future identical queries
+        # 5. Cache the result in local memory for future identical queries
         _query_cache[cache_key] = {
             'answer': full_answer,
             'docs_ids': retrieved_docs_ids,
             'timestamp': time.time()
         }
-        logger.info(f"Query result cached for future use")
+        logger.info(f"✅ Query result cached in local memory")
         
-        # 5. Log query metrics
-        logger.info(f"Query processed - Latency: {latency:.2f}s, Cache hit: {cache_hit}, Documents ranked: {len(docs)}")
+        # 6. Log query metrics
+        logger.info(f"Query processed - Latency: {latency:.2f}s, Cache: {cache_source}, Docs: {len(docs)}, Cost: ${cost:.6f}")
         
-        # 6. Queue background logging (non-blocking)
+        # 7. Queue background logging (non-blocking)
         # This happens asynchronously, so the response completes immediately
         if self.db:
             try:

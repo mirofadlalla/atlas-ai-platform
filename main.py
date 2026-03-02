@@ -68,6 +68,13 @@ async def health_check():
     }
 
 # ==================== PROMETHEUS & MONITORING ====================
+"""
+Prometheus metrics integration for monitoring HTTP requests, system resources,
+RAG pipeline performance, and agent execution metrics.
+
+The metrics are exposed on the /metrics endpoint for Prometheus scraping.
+All metrics are automatically recorded and pushed to the metrics collection.
+"""
 
 from prometheus_client import Counter, Histogram, REGISTRY
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -78,11 +85,31 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Custom HTTP metrics middleware
+# ==================== CUSTOM METRICS MIDDLEWARE ====================
+
 class MetricsMiddleware(BaseHTTPMiddleware):
-    """Middleware for tracking HTTP request/response metrics."""
+    """
+    Custom middleware for tracking HTTP request and response metrics.
+    
+    Records:
+    - Total HTTP requests by method, endpoint, and status code
+    - Request latency (duration from request to response) 
+    - HTTP response payload size
+    
+    These metrics are exposed to Prometheus for alerting and visualization.
+    """
 
     async def dispatch(self, request, call_next):
+        """
+        Process HTTP request and record metrics.
+        
+        Args:
+            request: FastAPI request object
+            call_next: Next middleware/handler
+            
+        Returns:
+            Response with metrics recorded
+        """
         start_time = time()
         endpoint = request.url.path
 
@@ -90,7 +117,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             duration = time() - start_time
 
-            # Record metrics
+            # Import metrics objects
             from app.core.monitors import (
                 http_requests_total,
                 http_request_duration_seconds,
@@ -100,6 +127,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             method = request.method
             status = response.status_code
 
+            # Record metrics for this request
             http_requests_total.labels(
                 method=method, endpoint=endpoint, status_code=status
             ).inc()
@@ -119,28 +147,48 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             raise
 
 
-# Add metrics middleware
+# ==================== METRICS INITIALIZATION ====================
+
+# Add metrics middleware to track HTTP requests
 app.add_middleware(MetricsMiddleware)
 
-# Register the Instrumentator for advanced FastAPI metrics
+# Register Prometheus FastAPI Instrumentator for advanced metrics
+# This adds automatic instrumentation for all FastAPI endpoints
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", tags=["monitoring"])
 
-# Background task for recording resource metrics
+# Background task for recording system resource metrics
 @app.on_event("startup")
 async def startup_event():
-    """Initialize on startup."""
+    """
+    Initialize monitoring tasks on application startup.
+    
+    Starts background task to periodically record:
+    - System CPU usage
+    - System memory usage
+    - System disk usage
+    - Process-specific metrics (memory, file descriptors)
+    - Network I/O statistics
+    
+    These metrics help monitor application health and resource utilization.
+    """
     import asyncio
 
     async def record_metrics_periodically():
-        """Record system metrics every 10 seconds."""
+        """
+        Record system metrics every 10 seconds.
+        
+        This runs continuously in the background and updates gauge metrics
+        for current system and process resource utilization.
+        """
         while True:
             try:
+                # Call the function that updates all system metrics
                 record_resource_metrics()
                 await asyncio.sleep(10)
             except Exception as e:
                 logger.error(f"Error recording metrics: {e}")
                 await asyncio.sleep(10)
 
-    # Run metrics collection in background
+    # Start the metrics recording task in background
     asyncio.create_task(record_metrics_periodically())
     logger.info("Prometheus monitoring initialized successfully")

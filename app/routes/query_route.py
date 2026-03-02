@@ -2,6 +2,7 @@
 Routes for RAG query/answer endpoints.
 
 Implements query processing with streaming responses, rate limiting, and cost tracking.
+Records metrics to Prometheus and database for monitoring and analytics.
 """
 import logging
 import time
@@ -14,6 +15,7 @@ from app.core.rate_limitizer import rate_limit
 from app.schema.query_request import QueryRequest
 from app.rag.retrivel_data_pipline import RetrievalPipeline
 from app.services.mlflow_service import MLflowService
+from app.services.rag_services.query_logging_service import trigger_query_logging
 
 logger = logging.getLogger(__name__)
 
@@ -94,56 +96,86 @@ async def ask_question(
         
         async def answer_generator():
             """
-            Generator that yields answer chunks.
-            Metrics and costs are automatically logged by RetrievalPipeline.
+            Generator that yields answer chunks while tracking metrics.
+            
+            Automatically logs query execution to:
+            - MLflow for experiment tracking
+            - Database (runs and costs) for analytics
+            - Prometheus for monitoring and alerting
             """
+            nonlocal mlflow_run_id
+            
             full_answer = ""
             latency = 0
             cost_usd = 0.0
             input_tokens = 0
             output_tokens = 0
             cache_hit = False
+            retrieved_docs_ids = ""
             
             try:
-                # Stream answer - pipeline handles metric logging automatically
+                # Stream answer chunks from the RAG pipeline
                 for chunk in pipeline.ask_stream(query=request.query):
                     full_answer += chunk
                     yield chunk
                 
-                # Calculate latency
+                # Calculate total latency
                 latency = time.time() - start_time
                 
-                # Get token usage from the LLM (if available) for MLflow logging
+                # Extract token usage from LLM for cost calculation
                 try:
                     from app.services.llm_runner import CustomLocalLLM
                     usage = CustomLocalLLM.last_usage or {}
                     input_tokens = usage.get("input", 0)
                     output_tokens = usage.get("output", 0)
                     cost_usd = (input_tokens * 0.0000001) + (output_tokens * 0.0000002)
-                except:
-                    pass
+                except Exception as token_error:
+                    logger.warning(f"Could not extract token usage: {token_error}")
                 
-                # Log metrics to MLflow (if run is active)
+                # Log metrics to MLflow
                 if mlflow_run_id:
-                    mlflow.log_metric("latency_seconds", latency)
-                    mlflow.log_metric("cost_usd", cost_usd)
-                    mlflow.log_metric("input_tokens", input_tokens)
-                    mlflow.log_metric("output_tokens", output_tokens)
-                    mlflow.log_metric("answer_length", len(full_answer))
+                    import mlflow
+                    try:
+                        mlflow.log_metric("latency_seconds", latency)
+                        mlflow.log_metric("cost_usd", cost_usd)
+                        mlflow.log_metric("input_tokens", input_tokens)
+                        mlflow.log_metric("output_tokens", output_tokens)
+                        mlflow.log_metric("answer_length", len(full_answer))
+                    except Exception as mlflow_error:
+                        logger.error(f"Error logging to MLflow: {mlflow_error}")
                 
                 logger.info(
                     f"Query completed - Tenant: {tenant_id}, User: {current_user}, "
                     f"Latency: {latency:.2f}s, Cost: ${cost_usd:.6f}"
                 )
                 
+                # Trigger background logging to database and Prometheus metrics
+                try:
+                    trigger_query_logging(
+                        tenant_id=int(tenant_id),
+                        query=request.query,
+                        answer=full_answer,
+                        latency=latency,
+                        cache_hit=cache_hit,
+                        retrieved_docs_ids=retrieved_docs_ids,
+                        input_tokens=int(input_tokens),
+                        output_tokens=int(output_tokens),
+                        model_name="Qwen2.5-1.5B"
+                    )
+                except Exception as logging_error:
+                    logger.error(f"Error triggering query logging: {logging_error}")
+                
             except Exception as e:
-                logger.error(f"Error during query streaming: {e}")
+                logger.error(f"Error during query streaming: {e}", exc_info=True)
                 yield f"\n\nError: {str(e)}"
             
             finally:
                 # End MLflow run
                 if mlflow_run_id:
-                    MLflowService.end_run(status="FINISHED")
+                    try:
+                        MLflowService.end_run(status="FINISHED")
+                    except Exception as mlflow_end_error:
+                        logger.error(f"Error ending MLflow run: {mlflow_end_error}")
         
         return StreamingResponse(answer_generator(), media_type="text/plain")
         

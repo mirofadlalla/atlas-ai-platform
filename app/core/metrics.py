@@ -1,30 +1,50 @@
+"""
+RAG-specific metrics collection module.
+
+This module defines custom Prometheus metrics for RAG pipeline monitoring.
+These metrics complement the system metrics in monitors.py and provide
+RAG-specific visibility into pipeline performance and efficiency.
+
+Metrics are automatically collected and pushed to Prometheus for visualization
+in Grafana dashboards.
+"""
 from prometheus_client import Counter, Histogram
 
 class RAGMetrics:
-    # 1. Counter for Token Usage
+    """
+    Container for RAG-specific Prometheus metrics.
+    
+    These metrics track:
+    - Token consumption and costs
+    - RAG pipeline latency at different stages
+    - Cache hit rates and efficiency
+    - Query success/failure rates
+    """
+    
+    # Token usage tracking for cost analysis
     TOKEN_USAGE_COUNTER = Counter(
         "rag_token_usage_total", 
         "Total tokens consumed by LLM", 
         ["model_name", "token_type", "tenant_id"]
     )
 
-    # 2. Histogram for RAG Latency
+    # RAG pipeline latency by step
     RAG_LATENCY_HISTOGRAM = Histogram(
         "rag_process_latency_seconds", 
         "Latency of RAG steps", 
-        ["step", "tenant_id"] # to monitor latency for each step: retrieval, generation, etc. and per tenant
+        ["step", "tenant_id"]  # Steps: retrieval, reranking, generation, etc.
     )
 
-    # 3. Counter for Cache Efficiency
+    # Semantic cache efficiency
     CACHE_HIT_COUNTER = Counter(
         "rag_cache_hits_total", 
         "Number of semantic cache hits", 
-        ["status", "tenant_id"]
+        ["status", "tenant_id"]  # Status: hit, miss
     )
     
-    # 4. Counter for Requests (for tracking total RAG queries and their status)
+    # RAG query tracking
     REQUEST_COUNT = Counter(
         "rag_requests_total",
         "Total number of RAG queries",
-        ["tenant_id", "status"] # status: success / error
+        ["tenant_id", "status"]  # Status: success, error
     )

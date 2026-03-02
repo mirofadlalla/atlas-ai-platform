@@ -2,6 +2,7 @@
 Background task service for RAG query logging.
 
 Handles asynchronous logging of runs and costs to avoid blocking query responses.
+Records both database logs and Prometheus metrics for monitoring and analytics.
 """
 import logging
 from celery import shared_task
@@ -10,6 +11,12 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.repositories.runs_repository import RunsRepository
 from app.repositories.cost_log_repository import CostLogRepository
+from app.core.monitors import (
+    track_llm_cost,
+    query_pipeline_duration_seconds,
+    llm_tokens_consumed,
+    llm_tokens_generated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +37,7 @@ def log_query_run_and_cost(
     """
     Background task to log query runs and costs to the database.
     
+    Also records Prometheus metrics for monitoring and analytics.
     Runs asynchronously to avoid blocking the response stream.
     Retries up to 3 times on failure.
     
@@ -79,6 +87,36 @@ def log_query_run_and_cost(
             )
         else:
             logger.info(f"Logged run {run.run_id} - Tenant: {tenant_id} (no token usage)")
+        
+        # Record Prometheus metrics for monitoring and analytics
+        try:
+            # Track LLM cost and token usage
+            track_llm_cost(
+                tenant_id=str(tenant_id),
+                model_name=model_name,
+                input_tokens=int(input_tokens),
+                output_tokens=int(output_tokens),
+                cost=float(cost_usd)
+            )
+            
+            # Record query pipeline latency
+            query_pipeline_duration_seconds.labels(pipeline_stage="total").observe(float(latency))
+            
+            # Track token consumption
+            llm_tokens_consumed.labels(
+                tenant_id=str(tenant_id),
+                model_name=model_name
+            ).inc(int(input_tokens) + int(output_tokens))
+            
+            llm_tokens_generated.labels(
+                tenant_id=str(tenant_id),
+                model_name=model_name
+            ).inc(int(output_tokens))
+            
+            logger.debug(f"Recorded Prometheus metrics for run {run.run_id}")
+        except Exception as metric_error:
+            logger.error(f"Error recording Prometheus metrics: {metric_error}")
+            # Don't fail the entire task if metrics recording fails
         
         # Clean up database session
         db.close()
