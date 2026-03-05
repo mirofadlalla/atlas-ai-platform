@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def log_query_run_and_cost(
     self,
-    tenant_id: int,
+    tenant_id: str,
     query: str,
     answer: str,
     latency: float,

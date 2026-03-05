@@ -23,6 +23,9 @@ class SQLValidator:
         if any(word in sql_query.lower() for word in forbidden_words):
             raise ValueError("Security Violation: Only SELECT queries allowed.")
         
+        # Clean up the query: remove trailing semicolons and extra whitespace
+        sql_query = sql_query.rstrip(';').strip()
+        
         # Enforce Tenant Isolation - IMPORTANT: tenant_id is UUID string, must be quoted
         if "where" in sql_query.lower():
             sql = re.sub(

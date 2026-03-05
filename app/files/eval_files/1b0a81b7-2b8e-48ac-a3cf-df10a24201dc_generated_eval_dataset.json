@@ -1,0 +1,67 @@
+[
+  {
+    "id": "q_001",
+    "question": "What are the two external links provided for learning regular expressions?",
+    "answer": "https://www.geeksforgeeks.org/write-regular-expressions/, https://www.javatpoint.com/regex",
+    "relevant_ids": [
+      "0163ef28-86a2-12b9-3166-20720d2e082b"
+    ],
+    "paraphrases": [
+      "What are the two external resources provided for learning regular expressions?",
+      "What are the two URLs provided for learning about regex?"
+    ],
+    "_source_chunk": "Quantifier\n3. Groups and Ranges\n4. Escape Characters or character classes\nhttps://www.geeksforgeeks.org/write-regular-expressions/, https://www.javatpoint.com/regex"
+  },
+  {
+    "id": "q_002",
+    "question": "For human minds, making sense of CAPTCHA is easy.",
+    "answer": "CAPTCHA",
+    "relevant_ids": [
+      "05526cbb-925b-b6f4-b517-2954b82d195a"
+    ],
+    "paraphrases": [
+      "Humans can easily understand CAPTCHAs.",
+      "Making sense of CAPTCHAs is a simple task for humans."
+    ],
+    "_source_chunk": "CAPTCHA Advantages and Disadvantages\nkey Advantages of CAPTCHA:\n● It’s highly worthwhile to discourage spam and unwanted access \n● It can stop fake and ill-intended website access or usage \n● CAPTCHAs are an easy way to improve the website’s accessibility\n● For human minds, making sense of CAPTCHA i"
+  },
+  {
+    "id": "q_003",
+    "question": "What is the purpose of the User Agent string?",
+    "answer": "It identifies the browser/HTTP client and operating system of the request source.",
+    "relevant_ids": [
+      "0aea26fa-9912-acfd-8aca-445038f1c71d"
+    ],
+    "paraphrases": [
+      "What does the User Agent string do?",
+      "What information does the User Agent string provide?"
+    ],
+    "_source_chunk": "The User Agent \nis a string sent with every request. It identifies the \nbrowser/HTTP client and operating system of the request \nsource. https://www.zenrows.com/blog/bypass-captcha-web-scraping#how-to-bypass-captcha\nالكودللاطلاعفقط"
+  },
+  {
+    "id": "q_004",
+    "question": "How do most clients address an image-based CAPTCHA?",
+    "answer": "very quickly",
+    "relevant_ids": [
+      "0ccdadfd-5fe0-ec73-1016-1e06eb185f4b"
+    ],
+    "paraphrases": [
+      "What is the typical response time for most clients addressing an image-based CAPTCHA?",
+      "How fast can most clients solve an image-based CAPTCHA?"
+    ],
+    "_source_chunk": "The customer \nshould know which images has a specific feature among a group of \nimages. Google, then again, utilizes Google Street View CAPTCHAs that expect \nclients to enter a street address or a road sign into the material box. Most clients can address an image based CAPTCHA very quickly."
+  },
+  {
+    "id": "q_005",
+    "question": "What is the primary goal of emotion detection in text analysis?",
+    "answer": "identifies the emotion expressed in the text",
+    "relevant_ids": [
+      "14a292ab-f0e6-f024-25ce-109dbcd51d73"
+    ],
+    "paraphrases": [
+      "What does emotion detection in text analysis aim to achieve?",
+      "What is the main purpose of emotion detection in text analysis?"
+    ],
+    "_source_chunk": "2. Emotion Detection\n● Emotion detection is an advanced version of the above technique, which \nidentifies the emotion expressed in the text, such as joy, anger, sadness, etc. ● This technique is particularly helpful in understanding the feelings and \nattitudes of the individuals behind the text."
+  }
+]

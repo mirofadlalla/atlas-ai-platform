@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import apiService from '../services/apiService';
 import './AdminPanel.css';
 
@@ -38,7 +38,7 @@ function AdminPanel({ user }) {
     return 'An unknown error occurred';
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -46,7 +46,6 @@ function AdminPanel({ user }) {
         apiService.getPendingInvitations(),
         apiService.getPendingApprovals(),
       ]);
-      
       setInvitations(invData.invitations || []);
       setPendingUsers(appData.pending_users || []);
     } catch (err) {
@@ -54,7 +53,7 @@ function AdminPanel({ user }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleSendInvitation = async (e) => {
     e.preventDefault();
@@ -63,8 +62,13 @@ function AdminPanel({ user }) {
     setInviteSending(true);
     try {
       console.log('Sending invitation for:', email);
-      await apiService.sendInvitation(email, user.tenant_id);
-      alert('Invitation sent successfully!');
+      const resp = await apiService.sendInvitation(email, user.tenant_id);
+      // If API returns token immediately, show it; otherwise pending list will include it
+      if (resp && resp.token) {
+        alert('Invitation sent successfully!\nToken: ' + resp.token);
+      } else {
+        alert('Invitation sent successfully!');
+      }
       setEmail('');
       loadData();
     } catch (err) {
@@ -170,6 +174,20 @@ function AdminPanel({ user }) {
                     <div className="item-details">
                       <p>Sent: {new Date(inv.created_at).toLocaleDateString()}</p>
                       <p>Expires: {new Date(inv.expires_at).toLocaleDateString()}</p>
+                      {inv.token && (
+                        <p>
+                          Token: <span className="token-value">{inv.token}</span>{' '}
+                          <button
+                            className="btn-copy"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(inv.token);
+                              alert('Token copied to clipboard');
+                            }}
+                          >
+                            Copy
+                          </button>
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

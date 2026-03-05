@@ -39,7 +39,11 @@ QUESTION:
 Output ONLY valid SQL (no markdown, no explanations):"""
 
         response_dict = call_llama(prompt)
-        sql = response_dict['content'].strip()
+        # Handle both string and dict responses
+        if isinstance(response_dict, dict):
+            sql = response_dict.get('content', response_dict.get('text', '')).strip()
+        else:
+            sql = str(response_dict).strip()
         print(f"[SQL_GEN] Raw LLM response: {sql[:150]}...")
         
         # Strip markdown code blocks if present
@@ -52,6 +56,9 @@ Output ONLY valid SQL (no markdown, no explanations):"""
         if sql.endswith('```'):
             # Remove closing ```
             sql = sql.rsplit('```', 1)[0].strip()
+        
+        # Strip trailing semicolons to avoid SQL syntax errors
+        sql = sql.rstrip(';').strip()
         
         print(f"[SQL_GEN] After cleanup: {sql}")
         logger.info(f"Generated SQL: {sql[:200]}...")

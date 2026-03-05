@@ -81,17 +81,24 @@ def thought_node(state: AgentState):
     # Build context of what's been done
     actions_taken = []
     if has_queried_sql:
-        actions_taken.append("SQL database query executed")
+        sql_result = state.get('sql_result', 'No result')
+        actions_taken.append(f"SQL database query EXECUTED and returned results: {sql_result[:100]}")
     if has_retrieved_docs:
-        actions_taken.append("Document retrieval completed")
+        doc_count = len(state.get('retrieval_context', '')) if state.get('retrieval_context') else 0
+        actions_taken.append(f"Document retrieval completed - retrieved {doc_count} characters of documents")
     
     actions_context = "\n".join(f"- {a}" for a in actions_taken) if actions_taken else "None yet"
     
+    # Use the active sub-question instead of the original full question
+    sub_questions = state.get('sub_questions', [state.get('question', '')])
+    current_idx = state.get('current_sub_question_index', 0)
+    current_question = sub_questions[current_idx] if current_idx < len(sub_questions) else state.get('question', '')
+    
     # Use intelligent classification instead of fixed keyword lists
-    question_lower = state['question'].lower()
+    question_lower = current_question.lower()
     
     # Get question classification from helper function
-    question_type = _classify_question_type(state['question'])
+    question_type = _classify_question_type(current_question)
     
     # Build more specific guidance based on question type
     if question_type == "data":
@@ -101,11 +108,11 @@ def thought_node(state: AgentState):
     else:
         action_guidance = "Analyze the question to determine if it needs DATA (SQL) or KNOWLEDGE (RETRIEVAL)."
     
-    # Build prompt for better decision making
     prompt = f"""You are an AI Agent for an Enterprise RAG system. Respond with ONLY one JSON object, no markdown, no extra text.
 
-CURRENT QUESTION: {state['question']}
-Current Step: {state['step_count']} / 10
+ORIGINAL QUESTION: {state.get('original_question', state.get('question', ''))}
+CURRENT PART TO ANSWER: {current_question}
+Current Step: {state['step_count']} / 5
 
 {action_guidance}
 
@@ -117,12 +124,13 @@ QUESTION CATEGORIES:
 PREVIOUS DATA GATHERED:
 {actions_context}
 
-CRITICAL: 
+CRITICAL INSTRUCTIONS:
 1. Output ONLY valid JSON, no markdown code blocks
-2. Do NOT repeat yourself
+2. Do NOT repeat yourself or suggest the same action twice
 3. Do NOT output multiple JSON blocks
-4. Choose the CORRECT action type based on question category
-5. If question needs data but havent got it yet, choose 'sql' or 'retrieval'
+4. If you already have SQL data or retrieved documents, ALWAYS choose 'finish'
+5. NEVER suggest the same action twice in a row
+6. Once data is gathered, ALWAYS move to 'finish' to synthesize the answer
 
 Output exactly one JSON object with no extra text:
 {format_instructions}"""
@@ -133,15 +141,72 @@ Output exactly one JSON object with no extra text:
     # Determine action with improved parsing
     next_action = _parse_action_decision(response_text, state, question_lower)
     
-    return {
+    # Explicitly preserve all critical state to prevent loss through graph transitions
+    preserved_state = {
         "thought": response_text,
         "last_action": next_action,
         "step_count": state['step_count'] + 1,
         "thoughts": state.get('thoughts', []) + [response_text],
-        "observation_history": state.get('observation_history', []) + [f"Thought step {state['step_count'] + 1}: Decision = {next_action}"]
+        "observation_history": state.get('observation_history', []) + [f"Thought step {state['step_count'] + 1}: Decision = {next_action}"],
     }
+    
+    # Preserve all SQL-related fields
+    for sql_field in ['sql_attempted', 'sql_has_results', 'last_sql', 'sql_result']:
+        preserved_state[sql_field] = state.get(sql_field)
+    
+    # Preserve all retrieval-related fields
+    for retrieval_field in ['retrieval_context', 'retrieval_attempted']:
+        preserved_state[retrieval_field] = state.get(retrieval_field)
+    
+    # Preserve question tracking
+    for question_field in ['original_question', 'question', 'sub_questions', 'current_sub_question_index', 'sub_answers']:
+        preserved_state[question_field] = state.get(question_field)
+    
+    # Preserve other important fields
+    for important_field in ['tenant_id', 'total_cost']:
+        preserved_state[important_field] = state.get(important_field)
+    
+    return preserved_state
 
 
+# تفهم رد الـ LLM وتطلع منه action نظيف.
+'''
+طب قدام الا ال ام بيرجه ثوت واكشن ليه استهتخدم تاني احدد الاكشن لان 
+عشان:
+الـ LLM probabilistic model مش deterministic program
+ومينفعش تثق فيه blind trust في production
+الـ LLM مش مضمون يطلع JSON مظبوط
+
+حتى لو قلتله:
+
+Return ONLY valid JSON
+
+ممكن يرجعلك:
+
+Sure! Here's the decision:
+
+{
+  "action": "sql"
+}
+
+أو
+
+```json
+{
+  "action": "sql"
+}
+
+أو يطلعلك JSONين ورا بعض 
+
+أو يكتب comment جوه JSON
+
+لو انت معملتش:
+
+```python
+extract_first_json_block()
+
+السيستم هيقع.
+'''
 def _parse_action_decision(response_text: str, state: AgentState, question_lower: str) -> str:
     """
     Parse LLM response to extract action decision. Handles multiple JSON blocks and malformed responses.
@@ -160,8 +225,8 @@ def _parse_action_decision(response_text: str, state: AgentState, question_lower
         json_text = extract_first_json_block(response_text)
         
         # Parse using JsonOutputParser for robustness
-        parser = JsonOutputParser(pydantic_object=ActionDecision)
-        action_decision = ActionDecision.model_validate_json(json_text)
+        parser = JsonOutputParser(pydantic_object=ActionDecision) # ensure that the parser is aware of the expected schema like the json has thought and action
+        action_decision = ActionDecision.model_validate_json(json_text) # this will raise if json is invalid or doesn't match schema
         next_action = action_decision.action.lower().strip()
         
         # Validate action is one of allowed values
@@ -176,11 +241,30 @@ def _parse_action_decision(response_text: str, state: AgentState, question_lower
     # Apply safety overrides using intelligent classification
     has_queried_sql = bool(state.get('last_sql'))
     has_retrieved_docs = bool(state.get('retrieval_context'))
+    has_sql_results = state.get('sql_has_results', False)
+    sql_attempted = state.get('sql_attempted', False)
+    
+    # Debug logging
+    print(f"[THOUGHT_NODE DEBUG] next_action={next_action}, has_queried_sql={has_queried_sql}, sql_attempted={sql_attempted}, has_sql_results={has_sql_results}")
     
     question_type = _classify_question_type(question_lower)
     
+    # PREVENT INFINITE LOOPS: If we've already executed an action successfully and got results, move to finish
+    if next_action == 'sql' and (has_queried_sql or sql_attempted) and has_sql_results:
+        print(f"[PREVENTION] SQL already executed successfully with results, forcing FINISH")
+        next_action = 'finish'
+    elif next_action == 'sql' and sql_attempted and not has_sql_results:
+        print(f"[PREVENTION] SQL attempted but no results, trying retrieval or finish")
+        if not has_retrieved_docs:
+            next_action = 'retrieval'
+        else:
+            next_action = 'finish'
+    elif next_action == 'retrieval' and (has_retrieved_docs or state.get('retrieval_attempted', False)):
+        print(f"[PREVENTION] Retrieval already executed, forcing FINISH")
+        next_action = 'finish'
+    
     # Override: if question clearly needs data but tries to finish without data, force appropriate action
-    if next_action == 'finish' and not has_queried_sql and not has_retrieved_docs:
+    if next_action == 'finish' and not has_queried_sql and not has_retrieved_docs: # if the model tries to finish without gathering any data, we can override based on question type 
         if question_type == 'data':
             next_action = 'sql'
             print(f"Override: Forcing SQL for data question: '{question_lower[:50]}...'")
@@ -218,7 +302,7 @@ def _fallback_action_detection(question_lower: str, state: AgentState) -> str:
     # Default to finish if we've tried data gathering
     return 'finish'
 
-
+# First Step: Thought Node - Generate thought process and decide next action (sql, retrieval, finish) based on question analysis and gathered data. 
 def _classify_question_type(question: str) -> str:
     """
     Intelligently classify a question as 'data', 'knowledge', or 'mixed'.

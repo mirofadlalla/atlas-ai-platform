@@ -10,6 +10,13 @@ function IngestPage({ user }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [taskId, setTaskId] = useState('');
+
+  // Status check state
+  const [statusTaskId, setStatusTaskId] = useState('');
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusResult, setStatusResult] = useState(null);
+  const [statusError, setStatusError] = useState('');
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -33,8 +40,9 @@ function IngestPage({ user }) {
     setStatus('');
 
     try {
-      await apiService.uploadFile(file, source, author, recursive);
-      setStatus('✅ File ingestion started successfully!');
+      const res = await apiService.uploadFile(file, source, author, recursive);
+      setTaskId(res.task_id);
+      setStatus(`✅ File ingestion started! Task ID: ${res.task_id}`);
       setFile(null);
       setSource('');
     } catch (err) {
@@ -44,11 +52,29 @@ function IngestPage({ user }) {
     }
   };
 
+  const handleCheckStatus = async (e) => {
+    e.preventDefault();
+    if (!statusTaskId) return;
+
+    setStatusLoading(true);
+    setStatusError('');
+    setStatusResult(null);
+
+    try {
+      const response = await apiService.getEvaluationStatus(statusTaskId);
+      setStatusResult(response);
+    } catch (err) {
+      setStatusError(err.message || 'Failed to get status');
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
   return (
     <div className="ingest-page">
       <div className="ingest-header">
         <h1>📤 Ingest Documents</h1>
-        <p>Upload and process files into your knowledge base</p>
+        <p>Upload files to your knowledge base and track progress</p>
       </div>
 
       <div className="ingest-container">
@@ -107,6 +133,45 @@ function IngestPage({ user }) {
 
         {status && <div className="success-message">{status}</div>}
         {error && <div className="error-message">{error}</div>}
+
+        {taskId && (
+          <div className="task-info" style={{background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: 'var(--radius-xl)', marginBottom: '30px'}}>
+            <p>Task ID: <code>{taskId}</code></p>
+            <p>Copy this Task ID to check its status below.</p>
+          </div>
+        )}
+
+        {/* Check Task Status Form */}
+        <form onSubmit={handleCheckStatus} className="ingest-form" style={{marginTop: '20px'}}>
+          <h3>🔍 Check Ingestion Status</h3>
+          <div className="form-group">
+             <label htmlFor="statusTaskId">Task ID</label>
+             <input
+               type="text"
+               id="statusTaskId"
+               value={statusTaskId}
+               onChange={(e) => setStatusTaskId(e.target.value)}
+               placeholder="Enter Celery Task ID"
+               required
+             />
+          </div>
+          <button type="submit" disabled={statusLoading || !statusTaskId} className="btn-primary">
+            {statusLoading ? '⏳ Checking...' : '🔍 Check Status'}
+          </button>
+        </form>
+
+        {statusError && <div className="error-message">{statusError}</div>}
+        {statusResult && (
+          <div className="task-info" style={{background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: 'var(--radius-xl)', marginBottom: '30px', marginTop: '20px'}}>
+            <h3>Status: {statusResult.status}</h3>
+            {statusResult.result && (
+              <div className="result-details">
+                <pre>{JSON.stringify(statusResult.result, null, 2)}</pre>
+              </div>
+            )}
+            {!statusResult.result && <p>Result: Pending or Not Available</p>}
+          </div>
+        )}
 
         <div className="ingest-info">
           <h3>ℹ️ Information</h3>

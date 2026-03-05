@@ -3,7 +3,7 @@ Routes for RAG evaluation and query endpoints.
 
 Implements request logging, rate limiting, and cost tracking.
 """
-from app.services.rag_services.eval_pipline import evaluate_task
+from app.services.rag_services.eval_pipline import evaluate_task, generate_eval_dataset_task
 from app.services.mlflow_service import MLflowService
 from app.repositories.runs_repository import RunsRepository
 from app.repositories.cost_log_repository import CostLogRepository
@@ -136,6 +136,55 @@ async def evaluate(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         MLflowService.end_run(status="FINISHED")
+
+@router.post("/generate_dataset")
+async def generate_dataset(
+    tenant_id: str = Form(...),
+    max_chunks: int = Form(30),
+    current_user: str = Header(None, alias="current-user"),
+    user_role: str = Header(None, alias="user-role"),
+    db: Session = Depends(get_db)
+):
+    """
+    Start a task to generate an evaluation dataset (admin only).
+    """
+    # Verify admin identity
+    user_role_lower = (user_role or "").lower().strip()
+    if user_role_lower != "admin":
+        logger.warning(f"Unauthorized generate dataset attempt by {current_user} (role: {user_role})")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only admins can generate datasets. Your role: {user_role or 'not set'}"
+        )
+    
+    # Apply rate limiting
+    rate_limit(
+        user_id=current_user or "anonymous",
+        role="admin",
+        endpoint="/eval/generate_dataset"
+    )
+    
+    try:
+        # Submit Celery task
+        task = generate_eval_dataset_task.delay(
+            tenant_id=tenant_id,
+            max_chunks=max_chunks
+        )
+        
+        logger.info(
+            f"Dataset generation task started - Task ID: {task.id}, "
+            f"Tenant: {tenant_id}, Max Chunks: {max_chunks}"
+        )
+        
+        return {
+            "task_id": task.id,
+            "status": "Dataset generation started",
+            "message": f"Dataset generation task submitted successfully."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting dataset generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/status/{task_id}")

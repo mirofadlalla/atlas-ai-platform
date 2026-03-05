@@ -1,51 +1,43 @@
+import logging
 from app.services.llm_runner import call_llama
 from app.agent.core.state import AgentState
-import logging
 
 logger = logging.getLogger(__name__)
 
 def finish_node(state: AgentState):
     """
     Node responsible for generating the final answer based on gathered information.
-    Uses SQL results, retrieved documents, and observations to provide a comprehensive answer.
-    
-    PRIORITY RULE: If question asked for database data, ONLY use SQL results (not document fallback)
-    
-    Args:
-        state: The current agent state with question, observations, and retrieval context
-        
-    Returns:
-        dict: Updated state with final_answer
+    Synthesizes multiple sub-questions if the original question was compound.
     """
     try:
-        # Check question type - does it ask for database data?
-        question_lower = state.get('question', '').lower()
+        sub_questions = state.get('sub_questions', [state.get('question', '')])
+        current_idx = state.get('current_sub_question_index', 0)
+        current_question = sub_questions[current_idx] if current_idx < len(sub_questions) else state.get('question', '')
+        
+        # Determine if we're answering a sub-question or ready to synthesize the final answer
+        is_final_synthesis = (current_idx >= len(sub_questions) - 1)
+        sub_answers = state.get('sub_answers', [])
+        
+        # 1) Answer the current sub-question based on gathered data
+        question_lower = current_question.lower()
         sql_keywords = ['how many', 'count', 'total', 'average', 'sum', 'number of', 'revenue', 'database']
         asks_for_db_data = any(kw in question_lower for kw in sql_keywords)
         
-        # Check what data sources are available
         has_sql_results = state.get('sql_has_results', False)
         has_sql_attempt = state.get('sql_attempted', False)
         has_retrieval = bool(state.get('retrieval_context'))
         
-        print(f"[FINISH] Question asks for DB data: {asks_for_db_data}, SQL attempted: {has_sql_attempt}, SQL has results: {has_sql_results}")
-        
-        # Prepare data summary for the final answer
         data_summary = []
         data_sources_used = []
         
-        # RULE: If question asks for database data and we attempted SQL, ONLY use SQL (no document fallback)
         if asks_for_db_data and has_sql_attempt:
             if has_sql_results and state.get('sql_result'):
                 data_summary.append(f"=== DATABASE QUERY RESULTS ===\n{state.get('sql_result', 'No results')}")
                 data_sources_used.append("DATABASE")
             else:
-                # SQL was attempted but found no data - report this instead of using documents
                 data_summary.append("=== DATABASE QUERY RESULTS ===\nNo matching records found in database")
                 data_sources_used.append("DATABASE (no results)")
-                print(f"[FINISH] ALERT: Question asks for database data but SQL returned no results. NOT using documents as fallback.")
         else:
-            # For general questions, use both SQL and retrieval data
             if state.get('sql_result'):
                 data_summary.append(f"=== DATABASE QUERY RESULTS ===\n{state.get('sql_result', 'No results')}")
                 data_sources_used.append("DATABASE")
@@ -53,62 +45,70 @@ def finish_node(state: AgentState):
             if has_retrieval:
                 data_summary.append(f"=== RETRIEVED KNOWLEDGE BASE DOCUMENTS ===\n{state.get('retrieval_context', 'No context')}")
                 data_sources_used.append("DOCUMENTS")
-        
-        # Build observation history
-        observation_history = state.get('observation_history', [])
-        if observation_history:
-            obs_text = "\n".join([f"- {obs}" for obs in observation_history[-5:]])  # Last 5 observations
-            data_summary.append(f"=== ANALYSIS STEPS ===\n{obs_text}")
-        
+                
         data_summary_text = "\n\n".join(data_summary) if data_summary else "No data was retrieved"
-        data_source_note = f"[Data sources used: {', '.join(data_sources_used)}]" if data_sources_used else "[No data sources]"
         
-        print(f"[FINISH] Data sources: {data_source_note}")
-        
-        prompt = f"""
-You are a helpful AI assistant providing answers based on retrieved data and business intelligence.
+        prompt = f"""You are a helpful AI assistant providing answers based on retrieved data.
 
-USER QUESTION:
-{state['question']}
+CURRENT QUESTION TO ANSWER: {current_question}
 
 GATHERED INFORMATION:
 {data_summary_text}
 
-DATA SOURCES USED:
-{data_source_note}
-
-TASK:
-Generate a clear, direct answer to the user's question using ONLY the information provided above.
-
-IMPORTANT RULES:
-1. Always use EXACT numbers and data from the gathered information
-2. For "how many", "count", or database questions: Use the specific number(s) from database results ONLY
-3. For analytical questions: Synthesize all available data to provide insights
-4. If database results contain the answer, USE THOSE NUMBERS DIRECTLY
-5. Do NOT make up numbers or estimates - only use provided data
-6. Be specific: Instead of "users exist", say "42 users were found in the database"
-7. If data contradicts general knowledge, use the database data as truth
-8. If no data was retrieved for a database question, explicitly state "No matching records found"
-9. CRITICAL: If a question asks specifically for database data but database has no results, report this clearly
-
-Answer format:
-- Start with a direct answer to the question
-- Include specific numbers/data points from results (with data source)
-- Provide brief explanation if needed
-- Mention data source (Database, External Knowledge, etc)
-- Mention any data limitations
+TASK: Generate a clear, direct answer to the question using ONLY the information provided above. Use exact numbers from the database if present.
 
 Your Answer:"""
-        
+
         response_dict = call_llama(prompt)
-        answer_text = response_dict['content']
+        sub_answer_text = response_dict['content'].strip()
         
-        print(f"[FINISH] Answer generated (length: {len(answer_text)} chars)")
+        sub_answers.append({
+            "question": current_question,
+            "answer": sub_answer_text
+        })
         
-        return {
-            "final_answer": answer_text,
+        # Reset the data context for the next sub-question
+        next_state = {
+            "sub_answers": sub_answers,
+            "current_sub_question_index": current_idx + 1,
+            "sql_result": None,
+            "last_sql": None,
+            "retrieval_context": None,
+            "sql_attempted": False,
+            "sql_has_results": False,
+            "step_count": 0,  # reset steps for next sub-question routing
+            "observation_history": state.get("observation_history", []) + [f"Answered part {current_idx+1}: {sub_answer_text[:100]}..."],
             "data_sources": data_sources_used
         }
+        
+        # 2) If it was the last sub-question, synthesize the final answer
+        if is_final_synthesis:
+            # If there was only 1 sub-question, the sub_answer IS the final answer
+            if len(sub_questions) == 1:
+                next_state["final_answer"] = sub_answer_text
+            else:
+                # Synthesize all answers
+                original_question = state.get("original_question", state.get("question", ""))
+                combined_text = "\n\n".join([f"Q: {sa['question']}\nA: {sa['answer']}" for sa in sub_answers])
+                
+                synthesis_prompt = f"""You are an AI assistant tasked with answering a complex user question.
+We have broken down the question into parts and answered each part separately.
+
+ORIGINAL USER QUESTION:
+{original_question}
+
+COLLECTED PARTIAL ANSWERS:
+{combined_text}
+
+TASK: Combine all the partial answers into one cohesive, beautifully formatted final answer that directly addresses the original user question.
+
+Your Final Answer:"""
+                
+                final_response = call_llama(synthesis_prompt)
+                next_state["final_answer"] = final_response['content'].strip()
+                
+        return next_state
+        
     except Exception as e:
         logger.error(f"Error generating final answer: {e}")
         return {

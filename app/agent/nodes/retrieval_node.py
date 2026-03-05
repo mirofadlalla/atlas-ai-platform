@@ -36,7 +36,8 @@ def retrieval_node(state: AgentState):
             "retrieval_context": context,
             "observation": observation,
             "observation_history": state.get("observation_history", []) + [observation],
-            "thoughtz": state.get("thoughtz", []) + [f"Retrieved {len(docs)} document(s)"]
+            "thoughtz": state.get("thoughtz", []) + [f"Retrieved {len(docs)} document(s)"],
+            "retrieval_attempted": True
         }
     except Exception as e:
         logger.error(f"Retrieval error: {e}")
@@ -44,5 +45,6 @@ def retrieval_node(state: AgentState):
         return {
             "retrieval_context": "",
             "observation": error_obs,
-            "observation_history": state.get("observation_history", []) + [error_obs]
+            "observation_history": state.get("observation_history", []) + [error_obs],
+            "retrieval_attempted": True
         }

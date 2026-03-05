@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 QDRANT_URL      = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = "atlas_documents1"
-TENANT_ID       = "1234"           # change to your tenant
+TENANT_ID       = "e44c9819-9437-47e5-9115-6caabbca918f"           # change to your tenant
 OUTPUT_PATH     = Path(__file__).parent / "evaluation_dataset.json"
 MAX_CHUNKS      = 30               # how many chunks to generate questions from
 

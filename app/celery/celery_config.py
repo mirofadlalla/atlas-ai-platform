@@ -33,6 +33,10 @@ celery_app.conf.task_routes = {
         "queue": "eval_data_queue",
         "routing_key": "eval",
     },
+    "app.services.rag_services.eval_pipline.generate_eval_dataset_task": {
+        "queue": "eval_data_queue",
+        "routing_key": "eval",
+    },
     "app.services.rag_services.query_logging_service.log_query_run_and_cost": {
         "queue": "logging_queue",
         "routing_key": "logging",

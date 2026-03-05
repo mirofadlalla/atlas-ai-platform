@@ -20,6 +20,15 @@ from app.rag.reranker import RankingService
 from app.repositories.runs_repository import RunsRepository
 from app.repositories.cost_log_repository import CostLogRepository
 from app.services.rag_services.query_logging_service import trigger_query_logging
+from app.core.monitors import (
+    cache_hits_total, 
+    cache_misses_total,
+    vector_search_queries_total,
+    vector_search_duration_seconds,
+    retrieved_chunks_count,
+    reranking_queries_total,
+    reranking_duration_seconds
+)
 from app.core.config import settings  # Import settings for Redis config
 
 # Setup paths
@@ -144,6 +153,11 @@ class RetrievalPipeline:
         retrieval_time = time.time() - start_time
         logger.debug(f"Document retrieval took {retrieval_time:.3f}s, got {len(docs)} documents")
         
+        # Track retrieval metrics
+        vector_search_queries_total.labels(tenant_id=str(self.tenant_id)).inc()
+        vector_search_duration_seconds.observe(retrieval_time)
+        retrieved_chunks_count.observe(len(docs))
+        
         # Sort by ID to ensure deterministic ordering for caching
         docs = sorted(docs, key=lambda d: d.metadata.get('_id', ''))
         
@@ -166,6 +180,10 @@ class RetrievalPipeline:
             
             rerank_time = time.time() - rerank_start
             logger.debug(f"Reranking took {rerank_time:.3f}s")
+            
+            # Track reranking metrics
+            reranking_queries_total.labels(reranker_type=self.ranking_service.strategy).inc()
+            reranking_duration_seconds.labels(reranker_type=self.ranking_service.strategy).observe(rerank_time)
             
             # Convert back to LangChain Document objects with updated metadata
             from langchain_core.documents import Document
@@ -257,6 +275,7 @@ class RetrievalPipeline:
             cached_result = _query_cache[cache_key]
             cache_hit = True
             cache_source = "LOCAL_MEMORY"
+            cache_hits_total.labels(cache_type="local_memory").inc()
             logger.info(f"[⚡ CACHE HIT - LOCAL MEMORY] Returning cached result for: {query[:50]}...")
             full_answer = cached_result['answer']
             # Stream the cached answer
@@ -318,10 +337,12 @@ class RetrievalPipeline:
             logger.info(f"[⚡ POSSIBLE REDIS CACHE HIT] LLM response time: {llm_time:.2f}s")
             cache_source = "REDIS"
             cache_hit = True
+            cache_hits_total.labels(cache_type="redis").inc()
         else:
             logger.info(f"[🔄 LLM GENERATED NEW RESPONSE] Response time: {llm_time:.2f}s (Redis available: {redis_cache is not None})")
             cache_source = "LLM_GENERATED"
             cache_hit = False
+            cache_misses_total.labels(cache_type="redis").inc()
         
         logger.info(f"Answer generation completed. Length: {len(full_answer)} chars")
 

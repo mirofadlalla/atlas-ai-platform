@@ -157,6 +157,12 @@ async def ask_agent(
                 f"Steps: {step_count}, Latency: {latency:.2f}s"
             )
             
+            # Extract token usage from the model (will represent the last generation step)
+            from app.services.llm_runner import CustomLocalLLM
+            usage = getattr(CustomLocalLLM, 'last_usage', {}) or {}
+            input_tokens = usage.get("input", 0)
+            output_tokens = usage.get("output", 0)
+            
             # Log the agent run asynchronously to database and Prometheus
             if final_result:
                 try:
@@ -263,6 +269,12 @@ async def ask_agent_batch(
             f"Steps: {step_count}, Latency: {latency:.2f}s"
         )
         
+        # Extract token usage from the model
+        from app.services.llm_runner import CustomLocalLLM
+        usage = CustomLocalLLM.last_usage or {}
+        input_tokens = usage.get("input", 0)
+        output_tokens = usage.get("output", 0)
+        
         # Log the agent run asynchronously to database and Prometheus
         try:
             sql_queries = result.get("last_sql", "")
@@ -278,8 +290,8 @@ async def ask_agent_batch(
                 latency=latency,
                 step_count=step_count,
                 total_cost=float(total_cost),
-                input_tokens=0,  # Tokens not available in batch mode
-                output_tokens=0,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 sql_queries=sql_queries if sql_queries else "",
                 retrieved_docs=retrieved_docs[:200] if retrieved_docs else "",
                 model_name="Qwen2.5-1.5B"

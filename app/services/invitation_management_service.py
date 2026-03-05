@@ -223,6 +223,7 @@ class InvitationManagementService:
                     invitations_list.append({
                         "invitation_id": str(inv.invitation_id),
                         "invited_email": inv.invited_email,
+                        "token": getattr(inv, 'token', None),
                         "status": inv.status,
                         "created_at": inv.created_at.isoformat() if inv.created_at else None,
                         "expires_at": inv.expires_at.isoformat() if inv.expires_at else None

@@ -14,6 +14,7 @@ def route_action(state):
     
     # Check what data has been gathered
     has_sql_data = bool(state.get("sql_result") or state.get("last_sql"))
+    has_sql_results = state.get("sql_has_results", False)
     has_retrieval_data = bool(state.get("retrieval_context"))
     
     # Track which actions have been attempted (even if they failed)
@@ -43,6 +44,51 @@ def route_action(state):
     if last_action not in ["sql", "retrieval", "finish"]:
         last_action = "finish"
     
+    # Check execution attempts tracking
+    sql_attempted_flag = state.get("sql_attempted", False)
+    retrieval_attempted = state.get('retrieval_attempted', False)
+    step_count = state.get("step_count", 0)
+    obs_history_len = len(observation_history)
+    
+    # AGGRESSIVE PREVENTION: Count repeated action attempts in observation history
+    recent_actions = []
+    for obs in observation_history[-5:]:  # Check last 5 observations
+        if "Decision = sql" in obs:
+            recent_actions.append("sql")
+        elif "Decision = retrieval" in obs:
+            recent_actions.append("retrieval")
+    
+    # If we see the same action suggested multiple times in a row, force finish
+    if len(recent_actions) > 1 and recent_actions[-1] == recent_actions[-2]:
+        print(f"[ROUTER AGGRESSIVE PREVENTION] Detected repeated {recent_actions[-1]} actions in history, forcing FINISH")
+        return "finish"
+    
+    # Also enforce: if step_count > 2 and last_action hasn't changed, something is wrong, finish
+    if step_count > 3:
+        print(f"[ROUTER] Step count {step_count} exceeds threshold (3), forcing FINISH")
+        return "finish"
+    
+    # PREVENT INFINITE RETRY: If action suggests repeating a successful execution, move to finish
+    # Debug logging
+    print(f"[ROUTER DEBUG] last_action={last_action}, has_attempted_sql={has_attempted_sql}, has_sql_results={has_sql_results}, has_retrieval_data={has_retrieval_data}, step={step_count}")
+    
+    if last_action == "sql" and has_attempted_sql and has_sql_results:
+        print(f"[ROUTER PREVENTION] SQL already executed successfully with results, forcing FINISH to avoid loop")
+        return "finish"
+    
+    if last_action == "retrieval" and has_attempted_retrieval and has_retrieval_data:
+        print(f"[ROUTER PREVENTION] Retrieval already executed successfully, forcing FINISH to avoid loop")
+        return "finish"
+    
+    # Additional prevention: If last_action is same as previous action AND we attempted it, just finish
+    if (last_action == "sql" and has_attempted_sql) or (last_action == "retrieval" and has_attempted_retrieval):
+        # Check if this is likely a repeated suggestion
+        step_count = state.get("step_count", 0)
+        last_observation = observation_history[-1] if observation_history else ""
+        if "Decision = " + last_action in last_observation:
+            print(f"[ROUTER PREVENTION] Detected repeated {last_action} suggestion, forcing FINISH")
+            return "finish"
+    
     # PREVENT INFINITE RETRY: If last action failed (attempted but no data), try alternative or finish
     if last_action == "retrieval" and has_attempted_retrieval and not has_retrieval_data:
         print(f"Router: Retrieval attempted but failed/no data, moving to finish")
@@ -65,10 +111,25 @@ def route_action(state):
             return "retrieval"
     
     # If agent wants to finish but needs knowledge and hasn't retrieved, force retrieval
-    if last_action == "finish" and question_needs_knowledge and not has_retrieved_data:
+    if last_action == "finish" and question_needs_knowledge and not has_retrieval_data:
         if not has_attempted_retrieval:
             print(f"Router: Question needs knowledge, routing to retrieval")
             return "retrieval"
     
     print(f"Router: Returning agent decision: {last_action}")
     return last_action
+
+
+def route_after_finish(state):
+    """
+    Routes from finish node either back to think (for next sub-question) or to END.
+    """
+    idx = state.get("current_sub_question_index", 0)
+    subs = state.get("sub_questions", [])
+    
+    if idx < len(subs):
+        print(f"Router: Moving to next sub-question ({idx+1}/{len(subs)})")
+        return "think"
+    else:
+        print(f"Router: All sub-questions answered. Finishing graph.")
+        return "end"

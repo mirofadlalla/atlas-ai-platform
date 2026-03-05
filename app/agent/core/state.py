@@ -6,7 +6,7 @@ class AgentState(TypedDict):
     question: str
     """The question or task that the agent is currently working on."""
 
-    tenant_id: int
+    tenant_id: str
     """The tenant ID associated with the agent."""
 
     thought: Optional[str]
@@ -41,3 +41,17 @@ class AgentState(TypedDict):
 
     final_answer: Optional[str]
     """The final answer provided by the agent."""
+    
+    # --- Question Decomposition State ---
+    
+    original_question: Optional[str]
+    """The original full question asked by the user."""
+    
+    sub_questions: List[str]
+    """List of decomposed sub-questions, or just the original question if not compound."""
+    
+    sub_answers: List[str]
+    """List of answers collected for each sub-question."""
+    
+    current_sub_question_index: int
+    """Index of the currently active sub-question being processed."""

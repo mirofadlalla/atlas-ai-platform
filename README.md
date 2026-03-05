@@ -1,1404 +1,809 @@
-# Atlas AI - Multi-Tenant RAG & Agent Platform
+# Atlas AI Platform - Complete System Documentation
 
-## Table of Contents
-1. [Project Overview](#project-overview)
-2. [Problem Statement & Solution](#problem-statement--solution)
-3. [Architecture](#architecture)
-4. [Key Features](#key-features)
-5. [Technology Stack](#technology-stack)
-6. [System Components](#system-components)
-7. [Monitoring & Observability](#monitoring--observability)
-8. [Metrics Flow](#metrics-flow)
-9. [Getting Started](#getting-started)
-10. [API Documentation](#api-documentation)
-11. [Frontend Analytics](#frontend-analytics)
-12. [Dashboard Access](#dashboard-access)
-13. [Cost Tracking](#cost-tracking)
-14. [Troubleshooting](#troubleshooting)
+**Version**: 1.0.0  
+**Last Updated**: March 2026
 
 ---
 
-## Project Overview
+## 📋 Table of Contents
 
-**Atlas AI** is a comprehensive multi-tenant Retrieval-Augmented Generation (RAG) and AI Agent platform designed to enable organizations to build intelligent applications on top of their proprietary data.
-
-### What is RAG?
-
-Retrieval-Augmented Generation (RAG) combines the power of large language models (LLMs) with retrieval systems to:
-- Answer questions grounded in your documents
-- Reduce hallucinations by referencing actual data
-- Enable knowledge base queries with AI understanding
-- Provide cost-effective inference compared to fine-tuning
-
-### What are AI Agents?
-
-AI Agents are autonomous systems that can:
-- Reason about complex problems
-- Execute multiple tools/actions in sequence
-- Retrieve both structured (SQL) and unstructured (documents) data
-- Synthesize final answers from multiple information sources
-- Think through multi-step problems autonomously
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Technology Stack](#technology-stack)
+4. [Getting Started](#getting-started)
+5. [Core Features](#core-features)
+6. [Module Documentation](#module-documentation)
+7. [API Endpoints](#api-endpoints)
+8. [Monitoring & Observability](#monitoring--observability)
+9. [Deployment](#deployment)
+10. [Development Workflow](#development-workflow)
 
 ---
 
-## Problem Statement & Solution
+## 🚀 Overview
 
-### The Problem
+**Atlas AI** is a sophisticated multi-tenant SaaS platform that combines Retrieval-Augmented Generation (RAG) with autonomous AI agent reasoning. The system enables organizations to:
 
-Organizations struggle with:
-1. **Scattered Knowledge**: Knowledge exists in documents, databases, and systems
-2. **Limited Context**: LLMs lack access to proprietary data without fine-tuning
-3. **Cost**: Fine-tuning and maintaining custom models is expensive
-4. **Multi-Tenancy**: Supporting multiple organizations while isolating data
-5. **Observability**: No visibility into RAG/Agent performance, costs, and quality
-6. **Scalability**: Hard to scale document ingestion and query processing
+- **Build intelligent knowledge bases** through advanced document ingestion and semantic search
+- **Execute complex queries** using AI agents that reason, retrieve data, and synthesize answers
+- **Scale across tenants** with complete data isolation and role-based access control
+- **Monitor performance** through comprehensive observability with Prometheus, Grafana, and Sentry
+- **Track costs** with detailed LLM usage metrics and billing analytics
 
-### The Solution: Atlas AI
+### Key Capabilities
 
-Atlas AI addresses these challenges with:
+✅ **Intelligent RAG Pipeline**
+- Hybrid semantic search (Dense embeddings + BM25 sparse search)
+- Cross-encoder reranking for relevance optimization
+- 3-tier caching: RAM → Redis → Database for performance
 
-1. **Unified Knowledge Base**: 
-   - Ingest documents (PDF, DOCX, TXT)
-   - Store embeddings in Qdrant vector database
-   - Retrieve semantically similar chunks for context
+✅ **Autonomous Agent System**
+- Multi-step reasoning using LangGraph state machines
+- Dynamic question decomposition for complex queries
+- SQL query generation with security constraints
+- Real-time streaming responses via Server-Sent Events (SSE)
 
-2. **RAG Pipeline**:
-   - Retrieve relevant documents from vector DB
-   - Re-rank results for better relevance
-   - Generate answers using retrieved context
-   - Automatic cost and latency tracking
+✅ **Multi-tenant Architecture**
+- Complete data isolation at every layer
+- Tenant-scoped rate limiting and cost tracking
+- User invitation & approval workflows
+- Role-based access control (RBAC)
 
-3. **AI Agents**:
-   - Multi-step reasoning engine
-   - SQL query execution for structured data
-   - Document retrieval for unstructured data
-   - Self-contained reasoning thread
+✅ **Enterprise Observability**
+- Prometheus metrics for all operations
+- Grafana dashboards for real-time monitoring
+- Sentry error tracking with full context
+- Structured JSON logging for container environments
+- MLflow integration for experiment tracking
 
-4. **Multi-Tenant Architecture**:
-   - Isolated data per tenant
-   - Per-tenant metrics and analytics
-   - Separate knowledge bases
-   - Role-based access control
-
-5. **Complete Observability**:
-   - Real-time metrics via Prometheus
-   - Historical analysis via MLflow
-   - Admin dashboards in Grafana
-   - Cost tracking and analytics
-
-6. **Scalability**:
-   - Async task processing via Celery
-   - Redis caching for performance
-   - Connection pooling for databases
-   - Distributed request processing
+✅ **Async Processing**
+- Celery workers for background tasks
+- Document ingestion pipeline automation
+- Non-blocking metrics collection
+- RabbitMQ message broker
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
-### System Architecture Diagram
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                         │
-│  - Dashboard  - Analytics  - Document Ingestion  - Query UI   │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │ HTTPS/CORS
-┌──────────────────────────┴─────────────────────────────────────┐
-│                    FastAPI Backend (8000)                       │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │              API Routes                                  │  │
-│  │  - /auth (Authentication & Authorization)               │  │
-│  │  - /query/ask (RAG Query Endpoint)                       │  │
-│  │  - /agent/ask-agent (Agent Reasoning Endpoint)          │  │
-│  │  - /ingest (Document Ingestion)                         │  │
-│  │  - /metrics (Prometheus Metrics Endpoint)               │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │           Core Services                                  │  │
-│  │  - RAG Pipeline (retrieval + generation)                │  │
-│  │  - Agent Engine (reasoning + tool use)                  │  │
-│  │  - Embedding Service                                    │  │
-│  │  - Reranking Service                                    │  │
-│  │  - Cost Calculation                                     │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└────────────┬──────────────────────────────┬──────────────────┘
-             │                              │
-       ┌─────┴──────┐             ┌────────┴────────┐
-       │             │             │                 │
-   ┌───▼────┐   ┌──▼────┐   ┌───▼────┐   ┌───────▼──┐
-   │PostgreSQL  │ Qdrant │   │ Redis  │   │ Celery  │
-   │(Metadata)  │(Vectors)  │(Cache) │   │(Tasks)  │
-   └───────┘   └───────┘   └────────┘   └────────┘
-
-   Monitoring & Observability:
-   ┌───────────────┐  ┌──────────────┐  ┌──────────┐
-   │ Prometheus    │  │ Grafana      │  │ MLflow   │
-   │(Metrics DB)   │  │(Dashboards)  │  │Analytics │
-   └───────────────┘  └──────────────┘  └──────────┘
-```
-
-### Data Flow for Query Processing
+### System Architecture Overview
 
 ```
-User Query 
-    │
-    ▼
-┌─────────────────────────────────┐
-│ 1. Retrieve Documents           │
-│  - Vector similarity search      │
-│  - Semantic cache lookup         │
-│  - Return top-k chunks          │
-└──────────────┬──────────────────┘
-               │
-               ▼
-         ┌─────────────────────┐
-         │ 2. Rerank Results   │
-         │  - Cross-encoder    │
-         │  - BM25 scoring     │
-         │  - Hybrid approach  │
-         └──────────┬──────────┘
-                    │
-                    ▼
-         ┌──────────────────────────┐
-         │ 3. Generate Answer       │
-         │  - LLM with context      │
-         │  - Temperature control   │
-         │  - Token tracking        │
-         └──────────┬───────────────┘
-                    │
-                    ▼
-         ┌──────────────────────────┐
-         │ 4. Log & Track Metrics   │
-         │  - Save to database      │
-         │  - Record to Prometheus  │
-         │  - Calculate costs       │
-         └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React)                             │
+│              Running on http://localhost:3000                    │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ HTTPS/WebSocket
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  FastAPI Backend (Main.py)                      │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │           Route Handlers (5 Main API Groups)            │   │
+│  ├─────────────────────────────────────────────────────────┤   │
+│  │ 1. /api/auth/*         → Authentication & Authorization │   │
+│  │ 2. /api/agent/*        → Agent Reasoning                │   │
+│  │ 3. /api/query/*        → Direct RAG Queries             │   │
+│  │ 4. /api/ingest-rag/*   → Document Ingestion             │   │
+│  │ 5. /api/eval-rag/*     → Evaluation Pipeline            │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Middleware Stack:                                              │
+│  ├─ CORS (Origin: localhost:3000)                              │
+│  ├─ Prometheus Metrics Instrumentation                         │
+│  ├─ Rate Limiting (Tenant-based)                               │
+│  ├─ Sentry Error Tracking                                      │
+│  └─ Request/Response Logging (JSON format)                     │
+└──────┬──────────┬──────────┬──────────┬──────────────────────────┘
+       │          │          │          │
+       ▼          ▼          ▼          ▼
+   ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐
+   │Agent   │ │  RAG   │ │  Core  │ │ Services │
+   │System  │ │Pipeline│ │Modules │ │          │
+   └────────┘ └────────┘ └────────┘ └──────────┘
+       │          │          │          │
+       └──────────┴──────────┴──────────┘
+                  │
+    ┌─────────────┼─────────────┐
+    │             │             │
+    ▼             ▼             ▼
+┌─────────┐  ┌──────────┐  ┌───────────┐
+│PostgreSQL   │ Qdrant │  │ Redis   │
+│(Primary DB) │(Vector │  │ (Cache) │
+│             │Search) │  │         │
+└─────────┘  └──────────┘  └───────────┘
+
+┌────────────────────────────────────────┐
+│   Async Processing (Celery + RabbitMQ) │
+├────────────────────────────────────────┤
+│ • Document Ingestion                   │
+│ • Metrics Collection                   │
+│ • Evaluation Tasks                     │
+│ • Background Logging                   │
+└────────────────────────────────────────┘
+
+┌────────────────────────────────────────┐
+│   Monitoring Stack                     │
+├────────────────────────────────────────┤
+│ • Prometheus (:9090)                   │
+│ • Grafana (:3000)                      │
+│ • Sentry (Cloud)                       │
+│ • MLflow (:5000)                       │
+└────────────────────────────────────────┘
+```
+
+### Data Flow Architecture
+
+#### 1. **Document Ingestion Flow**
+```
+File Upload (PDF/Text)
+    ↓
+File Hash Calculation (Deduplication)
+    ↓
+Document Loading & Parsing
+    ↓
+Semantic Chunking (with timeout fallback)
+    ↓
+Embedding Generation (Dense + Sparse)
+    ├─ Dense: Sentence Transformers (all-MiniLM-L6-v2)
+    └─ Sparse: BM25 (FastEmbed)
+    ↓
+Qdrant Vector Insert (Hybrid Index)
+    ↓
+Processing Status Tracking (DB)
+    ↓
+Metrics Logging (Prometheus)
+```
+
+#### 2. **Query Retrieval Flow**
+```
+User Query
+    ↓
+Redis Semantic Cache Check (Embedding-based)
+    ├─ HIT → Return cached result + metrics
+    └─ MISS → Continue
+    ↓
+Qdrant Hybrid Search
+    ├─ Dense Search (vector similarity)
+    └─ Sparse Search (BM25 text matching)
+    ↓
+Merge & Rerank Results
+    └─ Cross-encoder (ms-marco-MiniLM-L-6-v2)
+    ↓
+Top-K Selection (reranked chunks)
+    ↓
+LLM Generation (Context-aware synthesis)
+    ↓
+Result Caching (Redis + DB)
+    ↓
+Response to User + Metrics
+```
+
+#### 3. **Agent Reasoning Flow**
+```
+User Question
+    ↓
+Decompose Node (Question Analysis)
+    ├─ Is it compound? → Generate sub-questions
+    └─ Generate execution plan
+    ↓
+Thought Node Loop (for each sub-question)
+    ├─ Analyze: Does it need SQL or Retrieval?
+    ├─ Decide: Which tool to invoke
+    └─ Track: Cost & tokens
+    ↓
+SQL Node OR Retrieval Node (Parallel)
+    ├─ SQL: Generate secure query + execute
+    └─ Retrieval: Semantic search via RAG
+    ↓
+Finish Node (Answer Synthesis)
+    ├─ Aggregate results
+    └─ Generate final response
+    ↓
+Stream via SSE (Real-time Updates)
+    ↓
+Log Everything (Runs DB + Prometheus)
 ```
 
 ---
 
-## Key Features
+## 🛠️ Technology Stack
 
-### 1. **Multi-Tenant RAG**
-- Separate knowledge bases per tenant
-- Document ingestion with chunking
-- Vector embeddings with semantic search
-- Configurable token limits and costs
-- Stream-based responses for low latency
-
-### 2. **AI Agents with Reasoning**
-- Multi-step reasoning engine
-- Tool integration (SQL queries, document retrieval)
-- Thought streaming for transparency
-- Error recovery and retry logic
-- Configurable reasoning depth
-
-### 3. **Advanced Retrieval**
-- Semantic cache for redundant queries
-- Multiple reranking strategies
-- Hybrid search (semantic + keyword)
-- Document metadata filtering
-- Duplicate detection
-
-### 4. **Cost & Token Tracking**
-- Per-query cost calculation
-- Model-specific pricing
-- Tenant-level cost aggregation
-- Token usage analytics
-- Monthly billing summaries
-
-### 5. **Real-Time Monitoring**
-- Prometheus metrics exposure
-- 50+ custom metrics
-- System resource tracking
-- Request latency histograms
-- Error rate monitoring
-
-### 6. **Comprehensive Analytics**
-- MLflow experiment tracking
-- Query performance analysis
-- Cost trend visualization
-- Success rate tracking
-- Cache hit rate monitoring
-
-### 7. **Security & Access Control**
-- JWT authentication
-- Role-based permissions (user, admin, super-admin)
-- Tenant isolation
-- Approval workflow for new users
-- Secure password hashing
-
-### 8. **Scalability**
-- Async task processing with Celery
-- Connection pooling
-- Redis caching
-- Load balancing ready
-- Horizontal scaling support
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | React + Axios | Web UI & API communication |
+| **Backend Framework** | FastAPI 0.104.1 | REST API server |
+| **Application Server** | Uvicorn | ASGI server |
+| **Agent Orchestration** | LangGraph + LangChain | Multi-step reasoning workflows |
+| **LLM Integration** | OpenAI API | Language model access |
+| **Vector Search** | Qdrant 1.17.0 | Hybrid semantic search |
+| **Embeddings** | Sentence Transformers 2.2.2 | Dense embeddings (all-MiniLM-L6-v2) |
+| **Lexical Search** | BM25 (FastEmbedding) | Sparse embeddings for keyword matching |
+| **Reranking** | Cross-Encoder (MiniLM-L-6-v2) | Document relevance scoring |
+| **Primary Database** | PostgreSQL 13+ | Relational data storage |
+| **ORM** | SQLAlchemy 2.0.23 | Database abstraction layer |
+| **Cache Layer** | Redis 5.0.1 | Semantic cache + session storage |
+| **Message Broker** | RabbitMQ | Celery task queue |
+| **Task Queue** | Celery 5.3.4 | Background job processing |
+| **Authentication** | JWT + Passlib | Token-based auth + password hashing |
+| **Monitoring** | Prometheus 0.19.0 | Metrics collection |
+| **Visualization** | Grafana | Dashboard rendering |
+| **Error Tracking** | Sentry 1.38.0 | Exception monitoring |
+| **Experiment Tracking** | MLflow 2.10.1 | ML experiment logging |
+| **Container Orchestration** | Docker Compose | Multi-container deployment |
+| **Rate Limiting** | Python built-in | Request throttling per tenant |
 
 ---
 
-## Technology Stack
-
-### Backend
-- **Framework**: FastAPI (Python) - Modern async web framework
-- **Database**: PostgreSQL - Relational data (metadata, users, runs, costs)
-- **Vector DB**: Qdrant - Vector similarity search for embeddings
-- **Cache**: Redis - Caching and Celery message broker
-- **Task Queue**: Celery - Async task processing
-- **LLM**: Qwen 2.5 (1.5B) - Local language model
-- **Embeddings**: All-MiniLM-l6-v2 - Sentence embeddings
-
-### Monitoring & Observability
-- **Prometheus**: Metrics collection and storage
-- **Grafana**: Visualization and dashboards
-- **MLflow**: Experiment tracking and analytics
-- **Sentry**: Error tracking and logging
-
-### Frontend
-- **Framework**: React - Interactive UI
-- **Styling**: CSS - Custom design
-- **HTTP Client**: Fetch API - API communication
-
-### Infrastructure
-- **Containerization**: Docker
-- **Orchestration**: Docker Compose
-- **Server**: Uvicorn - ASGI server for FastAPI
-
----
-
-## System Components
-
-### 1. **Authentication Service** (`app/core/auth.py`)
-- User login/registration
-- JWT token generation
-- Role-based access control
-- Tenant isolation
-
-### 2. **RAG Pipeline** (`app/rag/retrivel_data_pipline.py`)
-- **Retrieval**: Vector similarity search
-- **Reranking**: Multiple strategies
-- **Generation**: LLM-based answer synthesis
-- **Caching**: Semantic cache with Redis
-
-**Key Methods**:
-```python
-pipeline = RetrievalPipeline(tenant_id=123)
-answer = pipeline.ask_stream(query="What is...?")  # Generator
-documents = pipeline.retrieve(query="...")
-```
-
-### 3. **Agent Engine** (`app/agent/core/graph.py`)
-- **Reasoning**: Multi-step thought process
-- **Tool Use**: SQL + Document Retrieval
-- **Synthesis**: Final answer generation
-- **State Management**: Maintains context
-
-**Supported Tools**:
-- SQL Executor: Execute queries on tenant databases
-- Document Retriever: Search knowledge base
-- Calculator: Mathematical operations
-
-### 4. **Embedding Service** (`app/design_pattern/embedded_model.py`)
-- **Model**: All-MiniLM-l6-v2 sentence transformer
-- **Singleton Pattern**: Single instance across app
-- **Batch Processing**: Efficient batch embedding
-
-### 5. **Reranking Service** (`app/rag/reranker.py`)
-- **Cross-Encoder**: Neural re-ranking
-- **BM25**: Keyword-based ranking
-- **Hybrid**: Combination of both
-
-### 6. **Cost Tracking** (`app/repositories/cost_log_repository.py`)
-- Per-query cost calculation
-- Token-based pricing
-- Model-specific rates
-- Tenant aggregation
-
-### 7. **Monitoring** (`app/core/monitors.py`)
-- **System Metrics**: CPU, memory, disk, network
-- **Application Metrics**: HTTP requests, latency, errors
-- **RAG Metrics**: Retrieval latency, token usage, cache hits
-- **Agent Metrics**: Reasoning steps, decision time, tool calls
-
-### 8. **Background Tasks** (`app/services/rag_services/`)
-- **Query Logging**: Asynchronous logging of query runs
-- **Agent Logging**: Asynchronous logging of agent executions
-- **Cost Persistence**: Database storage of cost records
-
----
-
-## Monitoring & Observability
-
-### Metrics Collection Architecture
-
-```
-┌─────────────────────────────────────┐
-│  Application Code                   │
-│  ├─ Query Routes                    │
-│  ├─ Agent Routes                    │
-│  └─ Logging Services                │
-└──────────────────┬──────────────────┘
-                   │ Records metrics
-                   ▼
-┌──────────────────────────────────────┐
-│  Prometheus Client Library           │
-│  ├─ Counters (totals)                │
-│  ├─ Histograms (distributions)       │
-│  ├─ Gauges (instantaneous values)    │
-│  └─ Summaries (percentiles)          │
-└──────────────────┬───────────────────┘
-                   │ Exposes via /metrics
-                   ▼
-┌──────────────────────────────────────┐
-│  Prometheus Server                   │
-│  ├─ Scrapes /metrics every 10s       │
-│  ├─ Time-series database             │
-│  ├─ Data retention: 15 days          │
-│  └─ PromQL query evaluation          │
-└──────────────────┬───────────────────┘
-                   │ Queries for visualization
-                   ▼
-┌──────────────────────────────────────┐
-│  Grafana Dashboards                  │
-│  ├─ System Health Monitor             │
-│  ├─ RAG Performance Metrics           │
-│  ├─ Cost Analytics                    │
-│  └─ Request Latency Breakdown         │
-└──────────────────────────────────────┘
-```
-
-### Available Metrics
-
-#### 1. **HTTP Request Metrics**
-- `atlas_http_requests_total` - Count of HTTP requests by method, endpoint, status
-- `atlas_http_request_duration_seconds` - Request latency distribution
-- `atlas_http_request_size_bytes` - Request payload sizes
-- `atlas_http_response_size_bytes` - Response payload sizes
-
-#### 2. **RAG Pipeline Metrics**
-- `atlas_documents_ingested_total` - Documents added to knowledge base
-- `atlas_document_ingestion_duration_seconds` - Time to ingest documents
-- `atlas_embeddings_generated_total` - Embeddings created
-- `atlas_vector_search_queries_total` - Vector search operations
-- `atlas_vector_search_duration_seconds` - Search latency
-- `atlas_retrieved_chunks_count` - Documents retrieved per query
-- `atlas_reranking_queries_total` - Re-ranking operations
-- `atlas_reranking_duration_seconds` - Re-ranking latency
-
-#### 3. **LLM & Token Metrics**
-- `atlas_llm_queries_total` - LLM calls made
-- `atlas_llm_query_duration_seconds` - LLM response time
-- `atlas_llm_tokens_consumed` - Input + output tokens
-- `atlas_llm_tokens_generated` - Output tokens only
-
-#### 4. **Agent Metrics**
-- `atlas_agent_queries_total` - Agent queries processed
-- `atlas_agent_reasoning_steps_count` - Number of reasoning steps
-- `atlas_agent_reasoning_duration_seconds` - Time spent reasoning
-- `atlas_agent_tool_calls_total` - Tool invocations
-- `atlas_agent_decision_duration_seconds` - Decision time
-
-#### 5. **Cost Metrics**
-- `atlas_api_calls_cost_total` - Total API costs in USD
-- `atlas_tokens_cost_total` - Token-based costs
-- `atlas_cost_per_query` - Query cost distribution
-- `atlas_tenant_monthly_cost` - Per-tenant monthly costs
-
-#### 6. **Cache Metrics**
-- `atlas_cache_hits_total` - Successful cache retrievals
-- `atlas_cache_misses_total` - Cache misses
-- `atlas_cache_size_bytes` - Current cache size
-
-#### 7. **System Metrics**
-- `atlas_system_cpu_usage_percent` - System CPU utilization
-- `atlas_system_memory_usage_percent` - RAM usage
-- `atlas_system_disk_usage_percent` - Disk usage
-- `atlas_process_cpu_usage_percent` - Process CPU usage
-- `atlas_process_memory_usage_mb` - Process RAM usage
-- `network_io_bytes_sent` - Network bytes transmitted
-- `network_io_bytes_received` - Network bytes received
-
-#### 8. **Database Metrics**
-- `atlas_database_connection_pool_size` - Active connections
-- `atlas_database_query_duration_seconds` - Query latency
-- `atlas_database_errors_total` - Failed queries
-
-#### 9. **Error Metrics**
-- `atlas_application_errors_total` - Application errors by type
-- `atlas_exceptions_total` - Exception counts by type
-
-#### 10. **Authentication Metrics**
-- `atlas_authentication_attempts_total` - Auth attempts (success/failure)
-- `atlas_authentication_duration_seconds` - Auth latency
-- `atlas_active_user_sessions` - Current sessions
-- `atlas_invalid_token_attempts` - Invalid token attempts
-
----
-
-## Metrics Flow
-
-### How Metrics are Recorded
-
-#### 1. **Automatic Collection via Middleware**
-```python
-# In main.py - MetricsMiddleware
-┌─────────────────────────────────────┐
-│ HTTP Request arrives                │
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ MetricsMiddleware.dispatch()        │
-│  - Records start time               │
-│  - Processes request                │
-│  - Measures duration                │
-│  - Records response size            │
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ Prometheus Metrics Updated          │
-│  - http_requests_total.inc()        │
-│  - http_request_duration.observe()  │
-│  - http_response_size.observe()     │
-└─────────────────────────────────────┘
-```
-
-#### 2. **Manual Collection in Routes**
-```python
-# Query Route: query_route.py
-┌─────────────────────────────────────┐
-│ POST /query/ask                     │
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ Process Query                       │
-│  - Track start time                 │
-│  - Run RAG pipeline                 │
-│  - Extract tokens                   │
-│  - Calculate cost                   │
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ trigger_query_logging()             │
-│  - Queue background task via Celery │
-│  - Return immediately to client     │
-└────────────┬────────────────────────┘
-             │
-             ▼ (Background Task)
-┌─────────────────────────────────────┐
-│ log_query_run_and_cost()            │
-│  - Save to database (runs)          │
-│  - Save to database (costs)         │
-│  - Record Prometheus metrics:       │
-│    * track_llm_cost()               │
-│    * llm_tokens_consumed.inc()      │
-│    * llm_tokens_generated.inc()     │
-│    * query_pipeline_duration.obs()  │
-└─────────────────────────────────────┘
-```
-
-#### 3. **System Resource Collection**
-```python
-# In main.py startup_event()
-┌─────────────────────────────────────┐
-│ record_metrics_periodically()       │
-│  - Runs every 10 seconds            │
-│  - Calls record_resource_metrics()  │
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ record_resource_metrics()           │
-│  (from app/core/monitors.py)        │
-│  - CPU: psutil.cpu_percent()        │
-│  - Memory: psutil.virtual_memory()  │
-│  - Disk: psutil.disk_usage()        │
-│  - Network: psutil.net_io_counters()│
-└────────────┬────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────┐
-│ Update Gauge Metrics                │
-│  - system_cpu_usage_percent.set()   │
-│  - system_memory_usage_percent.set()│
-│  - system_disk_usage_percent.set()  │
-│  - process_memory_usage_mb.set()    │
-└─────────────────────────────────────┘
-```
-
-### Why We See Metrics in Grafana
-
-**Critical Insight**: When you open Grafana and see a blank dashboard with only system metrics (CPU, memory, disk):
-
-1. ✅ **System Metrics Work** - These are collected every 10 seconds automatically
-2. ❌ **Application Metrics Missing** - These required explicit recording in code
-
-**The Issue We Fixed**:
-- Metrics were defined in `monitors.py` but never recorded when queries/agents ran
-- Logging services only saved to database, didn't update Prometheus
-- Frontend analytics showed data (from database) but Grafana showed nothing (no Prometheus metrics)
-
-**The Solution**:
-1. Added metric recording to `query_logging_service.py` - Now records `track_llm_cost()`, `llm_tokens_consumed.inc()`, etc.
-2. Added metric recording to `agent_logging_service.py` - Now records agent metrics
-3. Updated `query_route.py` to explicitly call `trigger_query_logging()`
-4. Updated `agent_route.py` to explicitly call `trigger_agent_logging()`
-
-Now when you run a query:
-1. Query completes and triggers background logging
-2. Background task records to database (for frontend analytics)
-3. Background task records to Prometheus (for Grafana dashboards)
-4. Prometheus scrapes `/metrics` every 10 seconds
-5. Grafana queries Prometheus and displays updated graphs
-
----
-
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
-- Docker & Docker Compose
+
 - Python 3.9+
-- 4GB RAM minimum
-- 10GB disk space
+- PostgreSQL 13+
+- Redis 6+
+- Qdrant (vector database)
+- RabbitMQ (message broker)
+- Docker & Docker Compose (for deployment)
 
 ### Installation
 
-1. **Clone and Setup**
-```bash
-cd atlas-ai
-cp .env.example .env
-# Edit .env with your settings
-```
-
-2. **Build and Start Services**
-```bash
-docker-compose up -d
-```
-
-3. **Monitor Startup**
-```bash
-# Check all services are healthy
-docker ps
-# View API logs
-docker logs atlas-api
-```
-
-### Verify Installation
-
-1. **API Health Check**
-```bash
-curl http://localhost:8000/health
-```
-
-2. **Prometheus Metrics**
-```bash
-curl http://localhost:9091/api/v1/targets
-```
-
-3. **Access Grafana**
-- URL: http://localhost:3100
-- Username: admin
-- Password: admin123 (from docker-compose.yml)
-
-4. **Access MLflow**
-- URL: http://localhost:5000
-- View experiment runs and metrics
-
-5. **Frontend**
-- URL: http://localhost:3100 (Grafana port)
-- Or http://localhost:3000 (React frontend, if configured)
-
----
-
-## API Documentation
-
-### Authentication Endpoints
-
-#### Register New User
-```bash
-POST /api/auth/register
-{
-  "email": "user@example.com",
-  "password": "secure_password",
-  "name": "User Name",
-  "tenant_name": "Tenant Name"
-}
-```
-
-#### Login
-```bash
-POST /api/auth/login
-{
-  "email": "user@example.com",
-  "password": "secure_password"
-}
-# Returns: { "access_token": "jwt_token", "user": {...} }
-```
-
-### Query Endpoints
-
-#### Ask Question (RAG)}
-```bash
-POST /api/query/ask
-Headers:
-  Authorization: Bearer {token}
-  tenant-id: {tenant_id}
-  current-user: {user_id}
-
-{
-  "query": "What is the company's revenue?"
-}
-
-Response: StreamingResponse (streaming plain text answer)
-```
-
-#### Retrieve Documents
-```bash
-POST /api/query/retrieve
-Headers: (same as above)
-
-{
-  "query": "What is the company's revenue?"
-}
-
-Response: 
-{
-  "query": "...",
-  "documents_count": 5,
-  "documents": [
-    {
-      "id": "doc_1",
-      "content": "...",
-      "source": "document.pdf",
-      "metadata": {...}
-    }
-  ]
-}
-```
-
-#### Get Cost Analytics
-```bash
-GET /api/query/cost-analytics
-Headers: (same as above)
-
-Response:
-{
-  "total_cost": 0.45,
-  "total_input_tokens": 5000,
-  "total_output_tokens": 1200,
-  "by_model": [
-    {
-      "model": "Qwen2.5-1.5B",
-      "cost": 0.45,
-      "input_tokens": 5000,
-      "output_tokens": 1200
-    }
-  ]
-}
-```
-
-#### Get Runs
-```bash
-GET /api/query/runs
-Headers: (same as above)
-
-Response:
-{
-  "runs": [
-    {
-      "run_id": "uuid",
-      "query": "What is...?",
-      "answer": "The answer is...",
-      "latency": 2.5,
-      "cache_hit": false,
-      "retrieved_docs_ids": "doc1,doc2",
-      "created_at": "2024-03-02T10:30:00"
-    }
-  ],
-  "count": 10
-}
-```
-
-### Agent Endpoints
-
-#### Ask Agent (Streaming)
-```bash
-POST /api/agent/ask-agent
-Headers:
-  Authorization: Bearer {token}
-
-{
-  "question": "What is the question?"
-}
-
-Response: StreamingResponse (Server-Sent Events)
-Events:
-  - { "type": "tool_start", "tool": "Thinking" }
-  - { "type": "thought", "content": "..." }
-  - { "type": "tool_end", "tool": "SQL Query" }
-  - { "type": "answer", "content": "..." }
-  - { "type": "done", "status": "success" }
-```
-
-#### Ask Agent (Batch)
-```bash
-POST /api/agent/ask-agent-batch
-Headers: (same as above)
-
-{
-  "question": "What is the question?"
-}
-
-Response:
-{
-  "success": true,
-  "question": "...",
-  "final_answer": "...",
-  "thoughts": ["...", "..."],
-  "step_count": 3,
-  "total_cost": 0.25,
-  "sql_queries": ["SELECT ..."],
-  "retrieved_context": "..."
-}
-```
-
-### Document Ingestion
-
-#### Ingest Document
-```bash
-POST /api/ingest/upload
-Headers:
-  Authorization: Bearer {token}
-  tenant-id: {tenant_id}
-
-Form Data:
-  file: multipart file (PDF, DOCX, TXT)
-  document_name: "Document Name"
-
-Response:
-{
-  "success": true,
-  "document_id": "doc_uuid",
-  "chunks_created": 25,
-  "status": "processing"
-}
-```
-
-### Metrics Endpoint
-
-#### Export Prometheus Metrics
-```bash
-GET /metrics
-
-Response: Prometheus text format
-# HELP atlas_http_requests_total Total number of HTTP requests
-# TYPE atlas_http_requests_total counter
-atlas_http_requests_total{endpoint="/api/query/ask",method="POST",status_code="200"} 125.0
-...
-```
-
----
-
-## Frontend Analytics
-
-### Available KPIs on Dashboard
-
-The frontend displays analytics from two sources:
-
-#### 1. From Database (Runs & Costs Tables)
-- **Total Queries**: Count of all query runs
-- **Average Latency**: Mean query response time
-- **Cache Hit Rate**: Percentage of cached responses
-- **Cost per Query**: Average cost per query
-- **By Model Breakdown**: Cost and token usage by LLM model
-- **Total Input Tokens**: Sum of all input tokens
-- **Total Output Tokens**: Sum of all output tokens
-
-#### 2. From Prometheus (via Grafana)
-- **Request Rate**: Requests per second by endpoint
-- **P95/P99 Latency**: Latency percentiles
-- **Error Rate**: Percentage of failed requests
-- **CPU Usage**: System CPU utilization
-- **Memory Usage**: RAM consumption
-- **Disk Usage**: Storage utilization
-
-### Data Flow for Frontend Analytics
-
-```
-┌──────────────────────────┐
-│   User Query Executed    │
-└────────┬─────────────────┘
-         │
-         ├──► trigger_query_logging()
-         │           │
-         │           ▼
-         │    ┌──────────────────────┐
-         │    │ Background Task      │
-         │    │ (Celery)             │
-         │    │                      │
-         │    ├─► Save to DB         │
-         │    │   ✓ Runs table       │
-         │    │   ✓ Costs table      │
-         │    │                      │
-         │    └─► Record Prometheus  │
-         │        ✓ Gauge metrics    │
-         │        ✓ Counter metrics  │
-         │
-         └────► Response to Client
-
-Later:
-┌──────────────────────────────────┐
-│  Frontend: GET /api/query/runs   │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│  Backend: Query Runs table         │
-│  - query_route.py:get_runs()       │
-│  - Returns last 50 runs            │
-│  - Includes latency, costs         │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│  Frontend: Display Analytics       │
-│  - Total queries                   │
-│  - Average latency                 │
-│  - Cache hit rate                  │
-│  - Cost per query                  │
-└────────────────────────────────────┘
-
-Similarly:
-┌──────────────────────────────────┐
-│  Frontend: GET /api/query/       │
-│          cost-analytics          │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│  Backend: Query Costs table        │
-│  - query_route.py:get_cost_analytics│
-│  - Group by model                  │
-│  - Sum costs & tokens              │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│  Frontend: Display Cost Report     │
-│  - Total cost                      │
-│  - By-model breakdown              │
-│  - Token usage trends              │
-└────────────────────────────────────┘
-```
-
----
-
-## Dashboard Access
-
-### Grafana Dashboards
-
-**URL**: http://localhost:3100
-
-**Default Credentials**:
-- Username: `admin`
-- Password: `admin123`
-
-**Available Dashboards**:
-
-1. **System Health Monitor**
-   - CPU utilization
-   - Memory usage
-   - Disk usage
-   - Network I/O
-
-2. **HTTP Request Metrics**
-   - Requests per second by endpoint
-   - Request latency (P50, P95, P99)
-   - Response sizes
-   - Error rates by status code
-
-3. **RAG Pipeline Performance**
-   - Document ingestion rate
-   - Embedding generation latency
-   - Vector search latency
-   - Retrieval count distribution
-   - Reranking performance
-
-4. **LLM & Token Metrics**
-   - Total LLM queries
-   - Query latency distribution
-   - Token consumption (input/output)
-   - Cost trends
-
-5. **Agent Performance**
-   - Agent queries executed
-   - Reasoning steps distribution
-   - Decision latency
-   - Tool call frequency
-
-6. **Cost Analytics**
-   - Total API costs
-   - Cost per query
-   - Cost by model
-   - Monthly cost trends
-   - Per-tenant costs
-
-### Creating Custom Dashboards
-
-1. Go to Prometheus data source
-2. Write PromQL queries:
-   ```promql
-   # Total requests
-   sum(rate(atlas_http_requests_total[5m]))
-   
-   # P95 latency
-   histogram_quantile(0.95, rate(atlas_http_request_duration_seconds_bucket[5m]))
-   
-   # Token usage per tenant
-   sum by (tenant_id) (atlas_llm_tokens_consumed)
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd atlas-ai
    ```
-3. Create panels and save dashboard
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration:
+   # - Database credentials
+   # - Redis connection details
+   # - Qdrant host/port
+   # - OpenAI API key
+   # - Sentry DSN
+   ```
+
+3. **Create virtual environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+4. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **Run database migrations**
+   ```bash
+   alembic upgrade head
+   ```
+
+6. **Start services with Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
+
+7. **Start the backend server**
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+8. **Start Celery workers** (in separate terminal)
+   ```bash
+   celery -A app.celery.celery_config worker --loglevel=info
+   ```
+
+9. **Start the frontend** (in separate terminal)
+   ```bash
+   cd frontend
+   npm install
+   npm start
+   ```
+
+Access the application at http://localhost:3000
+
+### Quick Verification
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# View Prometheus metrics
+curl http://localhost:8000/metrics
+
+# Access Grafana dashboards
+# Visit http://localhost:3000 (Grafana)
+
+# View Prometheus UI
+# Visit http://localhost:9090
+```
 
 ---
 
-## Cost Tracking
+## 💡 Core Features
 
-### Cost Calculation
+### 1. Document Ingestion & RAG
 
-**Token-based Pricing Model**:
-```
-cost = (input_tokens × input_rate) + (output_tokens × output_rate)
+- **Hybrid Artifact Chunking**: Semantically intelligent document splitting
+- **Deduplication**: Hash-based duplicate detection across uploads
+- **Tenant Isolation**: Each tenant's documents completely isolated
+- **Multi-format Support**: PDF, TXT, DOCX processing
+- **Caching Layer**: 3-tier cache (RAM → Redis → DB) for sub-second queries
 
-Default rates (configurable):
-- Input tokens: $0.0000001 per token
-- Output tokens: $0.0000002 per token
+**See**: [app/rag/README.md](app/rag/README.md)
 
-Example:
-- Input: 1000 tokens → $0.0001
-- Output: 500 tokens → $0.0001
-- Total: $0.0002
-```
+### 2. Autonomous Agent System
 
-### Cost Tracking Flow
+- **Multi-step Reasoning**: Decompose complex questions into sub-questions
+- **Conditional Routing**: Intelligently route to SQL, Retrieval, or Finish nodes
+- **Real-time Streaming**: SSE-based response streaming
+- **Cost Tracking**: Accurate token/cost accounting per query
+- **Telemetry**: Comprehensive logging of agent thought process
 
-```
-1. Query Executed
-   │
-   ├─ Extract token counts from LLM response
-   ├─ Calculate: cost = (input × rate1) + (output × rate2)
-   │
-2. Log Query Run
-   ├─ Save to database (runs table)
-   ├─ Save to database (costs table)
-   │
-3. Record Metrics
-   ├─ Prometheus: api_calls_cost_total.inc(cost)
-   ├─ Prometheus: tokens_cost_total.inc(cost)
-   ├─ Prometheus: cost_per_query.observe(cost)
-   │
-4. Analytics Available
-   ├─ Frontend: Cost breakdown by model
-   ├─ Frontend: Total costs paid
-   ├─ Frontend: Cost per query
-   ├─ Grafana: Cost trends over time
-   └─ Grafana: Per-tenant cost analysis
-```
+**See**: [app/agent/README.md](app/agent/README.md)
 
-### Viewing Cost Data
+### 3. Multi-tenant Architecture
 
-#### In Frontend (CostAnalyticsPage.jsx)
-- Calls: `GET /api/query/cost-analytics`
-- Shows: Total cost, by-model breakdown
-- Calls: `GET /api/query/runs`
-- Shows: Average latency, cache hit rate, cost per query
+- **Complete Isolation**: Data segregated by `tenant_id` across all tables
+- **Rate Limiting**: Per-tenant, role-based throttling
+- **User Management**: Invitation system with admin approval workflow
+- **Audit Logging**: All operations tracked for compliance
 
-#### In Grafana
-- Metric: `atlas_api_calls_cost_total`
-- Metric: `atlas_cost_per_query`
-- Dashboard: **Cost Analytics**
+**See**: [app/models/README.md](app/models/README.md)
 
-#### In MLflow
-- Experiment: Query runs
-- Logged metrics: `cost_usd`, `latency_seconds`
-- Tracked artifacts: Query logs
+### 4. Enterprise Observability
+
+- **40+ Prometheus Metrics**: HTTP requests, RAG performance, agent metrics, costs
+- **Grafana Dashboards**: Real-time visualization of system health
+- **Sentry Integration**: Automatic error tracking with full context
+- **Structured Logging**: JSON logs compatible with ELK stacks
+
+**See**: [app/core/README.md](app/core/README.md)
+
+### 5. Async Processing
+
+- **Celery Workers**: Background document processing
+- **RabbitMQ Broker**: 4-queue system for task distribution
+- **Non-blocking Operations**: Metrics/logging don't impact response times
+- **Task Tracking**: Monitor job progress via database
+
+**See**: [app/celery/README.md](app/celery/README.md)
 
 ---
 
-## Troubleshooting
+## 📁 Module Documentation
 
-### Issue 1: Grafana Shows Only System Metrics
+Each major module has detailed documentation:
 
-**Symptom**: 
-- CPU, memory, disk metrics show data
-- Token usage, cost metrics show no data
-- Agent metrics are empty
+| Layer | Module | Purpose | Key Features |
+|-------|--------|---------|--------------|
+| **📡 API Layer** | [Routes](app/routes/README.md) | HTTP endpoint handlers | 18+ REST endpoints, JWT auth, rate limiting |
+| **🎮 Adapter Layer** | [Controllers](app/controllers/README.md) | Request preprocessing | Input validation, error handling, dependency injection |
+| **(Layer 1)** | [Auth Controller](app/controllers/README.md) | Authentication workflows | User registration, login, token refresh |
+| | [Ingest Controller](app/controllers/README.md) | Document upload handling | File validation, ingestion queuing |
+| **🧠 Business Logic** | [Services](app/services/README.md) | Business orchestration | LLM execution, RAG orchestration, auth workflows |
+| **(Layer 2)** | [Agent Service](app/agent/README.md) | Multi-step reasoning | LangGraph 5-node workflow, SSE streaming, cost tracking |
+| | [RAG Service](app/rag/README.md) | Document retrieval | Hybrid search, reranking, 3-tier caching |
+| | [Auth Service](app/services/README.md) | Authentication logic | JWT tokens, password hashing, approval workflows |
+| **💾 Data Access** | [Repositories](app/repositories/README.md) | ORM data persistence | Repository pattern, tenant filtering, pagination |
+| **(Layer 3)** | [User/Run/Cost Repositories](app/repositories/README.md) | Domain-specific queries | Aggregation, filtering, isolation |
+| **🗄️ Data Model** | [Models](app/models/README.md) | Database schema | Multi-tenant design, 10+ tables with indexes |
+| **(Layer 4)** | [SQLAlchemy ORM](app/models/README.md) | Relational mapping | UUID keys, relationships, constraints |
+| **⚙️ Infrastructure** | [Core](app/core/README.md) | Config, DB, auth, monitoring | Settings, connection pooling, RBAC, 40+ metrics |
+| **(Layer 5)** | [Config](app/core/README.md) | Pydantic settings | Environment variables, validation |
+| | [Database](app/core/README.md) | SQLAlchemy engine | Connection pool, session management |
+| | [Monitoring](app/core/README.md) | Prometheus client | Custom metrics, middleware instrumentation |
+| | [Rate Limiter](app/core/README.md) | Tenant-based throttling | Per-user, per-resource limits |
+| **⚡ Async Processing** | [Celery](app/celery/README.md) | Background jobs | 4-queue system, Celery workers, task routing |
+| **(Parallel)** | [Task Queue](app/celery/README.md) | Async task execution | Document ingestion, evaluation, logging |
+| | [Message Broker](app/celery/README.md) | RabbitMQ integration | Durable queues, dead letter handling |
+| **🎨 Design Patterns** | [Patterns](app/design_pattern/README.md) | Reusable solutions | Singleton, Factory, Strategy patterns |
+| **(Utilities)** | [Singleton](app/design_pattern/README.md) | Embedding model | Thread-safe global instance, lazy loading |
+| | [Factory](app/design_pattern/README.md) | Object creation | User factory, upload factory, strategy selection |
 
-**Root Cause**: 
-- Prometheus wasn't being updated with application metrics
-- Logging services weren't recording metrics
+---
 
-**Solution** (Already Applied):
-✅ Modified `query_logging_service.py` to call `track_llm_cost()`
-✅ Modified `agent_logging_service.py` to call agent metrics
-✅ Updated `query_route.py` to call `trigger_query_logging()`
-✅ Updated `agent_route.py` to call `trigger_agent_logging()`
+### Recommended Reading Order
 
-**Verification**:
-```bash
-# 1. Make a query
-curl -X POST http://localhost:8000/api/query/ask \
-  -H "tenant-id: 1" \
-  -H "current-user: user123" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is this?"}'
+**For First-Time Contributors:**
+1. ✅ Start: [README.md](README.md) (you are here)
+2. 📖 Architecture: [System Overview](#architecture)
+3. 🔌 API: [Routes](app/routes/README.md) - understand exposed endpoints
+4. 🧠 Logic: [Services](app/services/README.md) - business workflows
+5. 💾 Data: [Models](app/models/README.md) - database design
 
-# 2. Wait 15 seconds (Prometheus scrape interval)
+**For Feature Development:**
+1. 🎯 Choose: Which endpoint/feature?
+2. 🔍 Map: Routes → Controllers → Services → Repositories
+3. 📚 Read: Relevant module READMEs above
+4. 💻 Code: Follow established patterns
+5. ✅ Test: Against example in docs
 
-# 3. Check metrics exist
-curl http://localhost:9091/api/v1/query?query=atlas_llm_tokens_consumed
+**For Performance Optimization:**
+1. 📊 Check: [Monitoring](app/core/README.md) for metrics
+2. ⚡ Find: Bottleneck (RAG cache hits? Agent loops?)
+3. 🔧 Optimize: 
+   - RAG: Improve cache strategy or reranker
+   - Agent: Reduce tool invocations or parallel execution
+   - DB: Add indexes, optimize queries
+4. 📈 Validate: Prometheus dashboard improvements
 
-# 4. View in Grafana after a few seconds
-# Go to http://localhost:3100 and check dashboards
+---
+
+## 🔌 API Endpoints
+
+### Authentication (`/api/auth`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | User registration |
+| POST | `/api/auth/login` | User login with email/password |
+| POST | `/api/auth/refresh` | Refresh JWT token |
+| GET | `/api/auth/me` | Get current user profile |
+| POST | `/api/auth/logout` | Logout |
+
+### Agent Reasoning (`/api/agent`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/agent/reason` | Execute agent reasoning with streaming |
+| GET | `/api/agent/runs` | List agent runs (paginated) |
+| GET | `/api/agent/runs/{run_id}` | Get specific run with full trace |
+| GET | `/api/agent/metrics` | Agent performance metrics |
+
+### Query/RAG (`/api/query`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/query/search` | Direct RAG query without agent |
+| GET | `/api/query/cache-stats` | Cache hit/miss statistics |
+| DELETE | `/api/query/clear-cache` | Clear semantic cache (admin only) |
+
+### Document Ingestion (`/api/ingest-rag`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/ingest-rag/upload` | Upload document(s) for ingestion |
+| GET | `/api/ingest-rag/status/{file_id}` | Track ingestion progress |
+| DELETE | `/api/ingest-rag/document/{doc_id}` | Delete processed document |
+| GET | `/api/ingest-rag/documents` | List ingested documents |
+
+### Evaluation (`/api/eval-rag`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/eval-rag/evaluate` | Run evaluation on queries |
+| GET | `/api/eval-rag/results` | Retrieve evaluation results |
+| GET | `/api/eval-rag/metrics` | RAG pipeline metrics |
+
+### Health & Monitoring
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Service health status |
+| GET | `/metrics` | Prometheus metrics export |
+
+---
+
+## 📊 Monitoring & Observability
+
+### Prometheus Metrics
+
+The system exposes 40+ metrics across multiple categories:
+
+**HTTP Metrics**
+- `atlas_http_requests_total` - Total requests by method/endpoint/status
+- `atlas_http_request_duration_seconds` - Request latency histogram
+- `atlas_http_request_size_bytes` - Request payload size
+- `atlas_http_response_size_bytes` - Response payload size
+
+**RAG Metrics**
+- `atlas_documents_ingested_total` - Documents processed
+- `atlas_document_ingestion_duration_seconds` - Ingestion time
+- `atlas_document_chunks_created` - Chunks generated
+- `atlas_embedding_requests_total` - Embedding API calls
+- `atlas_vector_search_queries_total` - Vector search operations
+- `atlas_vector_search_duration_seconds` - Search latency
+- `atlas_cache_hits_total` - Cache success count
+- `atlas_cache_misses_total` - Cache miss count
+- `atlas_reranking_queries_total` - Reranker invocations
+
+**Agent Metrics**
+- `atlas_agent_executions_total` - Agent runs
+- `atlas_agent_execution_duration_seconds` - Agent latency
+- `atlas_agent_thought_count` - Reasoning steps
+- `atlas_agent_tool_invocations_total` - Tool usage count
+
+**Cost Metrics**
+- `atlas_llm_tokens_used_total` - Token consumption
+- `atlas_llm_cost_usd_total` - USD cost tracker
+- `atlas_embedding_tokens_used_total` - Embedding tokens
+
+### Dashboards
+
+**Grafana Dashboards** available at http://localhost:3000
+
+1. **System Overview** - HTTP requests, latency, error rates
+2. **RAG Performance** - Document ingestion, cache stats, search latency
+3. **Agent Reasoning** - Execution times, success rates, cost analysis
+4. **Multi-tenant Metrics** - Per-tenant usage and costs
+5. **Resource Utilization** - CPU, memory, disk usage
+
+### Error Tracking (Sentry)
+
+All exceptions are automatically sent to Sentry with:
+- Full stack traces
+- Request context (headers, body, user)
+- User identification
+- Breadcrumbs for event timeline
+- Custom tags for filtering
+
+### Structured Logging
+
+JSON-formatted logs output to stdout for container environments:
+
+```json
+{
+  "timestamp": "2026-03-05T10:30:45.123Z",
+  "level": "INFO",
+  "logger": "app.rag.retrivel_data_pipline",
+  "message": "Retrieved 15 chunks for query",
+  "request_id": "uuid-xxx",
+  "tenant_id": 42,
+  "duration_ms": 234,
+  "cache_hit": true
+}
 ```
 
-### Issue 2: Frontend Analytics Show No Data
+---
 
-**Symptom**:
-- CostAnalyticsPage loads but shows zeros
-- No cost breakdown by model
-- No usage metrics
+## 🐳 Deployment
 
-**Root Cause**:
-- No queries have been executed yet
-- Database tables are empty
+### Docker Compose
 
-**Solution**:
-1. Execute a query: `POST /api/query/ask`
-2. Wait 10 seconds for background task to complete
-3. Refresh the analytics page
-4. Data should appear
+The `docker-compose.yml` defines all services:
 
-**Verify Database**:
-```bash
-# Connect to PostgreSQL
-docker exec atlas-postgres psql -U atlas_user -d atlas_db
-
-# Check runs table
-SELECT COUNT(*) FROM runs;
-
-# Check costs table
-SELECT * FROM cost_logs;
+```yaml
+services:
+  backend:        # FastAPI application
+  frontend:       # React web UI
+  postgres:       # Primary database
+  qdrant:         # Vector search
+  redis:          # Cache & semantic storage
+  rabbitmq:       # Message broker
+  celery:         # Background workers
+  prometheus:     # Metrics collection
+  grafana:        # Dashboard visualization
 ```
 
-### Issue 3: Prometheus Says No Data
-
-**Symptom**:
-- Grafana queries return "No data"
-- `/metrics` endpoint shows metrics but they don't appear in Prometheus
-
-**Root Cause**:
-- Prometheus isn't scraping the API
-- Network connectivity issue
-
-**Solution**:
+**Deploy**:
 ```bash
-# 1. Verify API /metrics endpoint works
-curl http://localhost:8000/metrics | head -20
-
-# 2. Check Prometheus targets
-curl http://localhost:9091/api/v1/targets
-
-# 3. Look for atlas-api target
-# Should show "UP" if healthy
-# If DOWN, check docker-compose.yml networking
-
-# 4. View Prometheus scrape logs
-docker logs atlas-prometheus | grep "atlas-api"
-
-# 5. Restart Prometheus if needed
-docker restart atlas-prometheus
-```
-
-### Issue 4: Agent Executions Not Logged
-
-**Symptom**:
-- Agent queries work but don't appear in analytics
-- No agent metrics in Grafana
-- No agent runs in database
-
-**Root Cause**:
-- `trigger_agent_logging()` not being called
-- Background tasks not processing
-
-**Solution**:
-1. Verify Celery worker is running:
-```bash
-docker logs atlas-celery-worker
-# Should show: "celery@... ready."
-```
-
-2. Make an agent query:
-```bash
-curl -X POST http://localhost:8000/api/agent/ask-agent \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What is this?"}'
-```
-
-3. Check Celery task status:
-```bash
-# View task queue
-docker exec atlas-redis redis-cli KEYS "*"
-```
-
-4. Verify logging service is imported:
-```bash
-grep "trigger_agent_logging" app/routes/agent_route.py
-```
-
-### Issue 5: High Latency on Queries
-
-**Symptom**:
-- Queries take 30+ seconds
-- Grafana shows high P95/P99 latency
-
-**Root Cause**:
-- Embedding model is slow
-- Vector search is inefficient
-- LLM response time is slow
-
-**Solution**:
-1. **Profile Query**:
-```python
-import time
-start = time.time()
-# Run query
-duration = time.time() - start
-print(f"Total: {duration}s")
-```
-
-2. **Check Embedding Latency**:
-- Metric: `atlas_embedding_generation_duration_seconds`
-- Typical: 0.5-2 seconds
-
-3. **Check Retrieval Latency**:
-- Metric: `atlas_vector_search_duration_seconds`
-- Typical: 0.1-0.5 seconds
-
-4. **Check LLM Latency**:
-- Metric: `atlas_llm_query_duration_seconds`
-- Typical: 5-30 seconds (depends on model size)
-
-5. **Optimization**:
-- Enable semantic caching
-- Reduce number of retrieved chunks
-- Use faster LLM model
-- Increase Qdrant pool size
-
-### Issue 6: Out of Memory
-
-**Symptom**:
-- Container crashes
-- `OOMKilled` in docker logs
-- Grafana memory usage at 100%
-
-**Root Cause**:
-- Large embeddings in memory
-- Unbounded cache growth
-- Memory leak in agent
-
-**Solution**:
-```bash
-# 1. Check memory usage
-docker stats atlas-api
-
-# 2. Clear Redis cache
-docker exec atlas-redis redis-cli FLUSHALL
-
-# 3. Increase container memory in docker-compose.yml
-# Add: mem_limit: 4g
-
-# 4. Restart services
-docker-compose down
 docker-compose up -d
+docker-compose logs -f backend
 ```
 
-### Issue 7: Database Connection Errors
-
-**Symptom**:
-- "Connection refused" errors
-- Queries fail with database errors
-- Health check fails
-
-**Root Cause**:
-- PostgreSQL not running
-- Network connectivity issue
-- Credentials mismatch
-
-**Solution**:
+**Stop**:
 ```bash
-# 1. Check PostgreSQL
-docker logs atlas-postgres
+docker-compose down
+```
 
-# 2. Verify connection
-docker exec atlas-postgres pg_isready -U atlas_user
+### Production Checklist
 
-# 3. Check env variables
-docker exec atlas-api env | grep POSTGRES
+- [ ] Enable HTTPS/TLS certificates
+- [ ] Configure CORS for production domain
+- [ ] Set strong secret keys (JWT, Redis password)
+- [ ] Enable PostgreSQL backups (daily)
+- [ ] Configure alerts in Grafana
+- [ ] Set Sentry to appropriate error threshold
+- [ ] Add rate limiting rules for endpoints
+- [ ] Enable audit logging for compliance
+- [ ] Configure database connection pooling
+- [ ] Set up log rotation for JSON logs
 
-# 4. Restart PostgreSQL
-docker-compose down postgres
-docker-compose up postgres -d
+---
+
+## 👨‍💻 Development Workflow
+
+### Local Development
+
+1. **Start all services**
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Start backend in development mode**
+   ```bash
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **Start frontend**
+   ```bash
+   cd frontend && npm start
+   ```
+
+4. **Start Celery worker (optional)**
+   ```bash
+   celery -A app.celery.celery_config worker --loglevel=debug
+   ```
+
+### Code Structure
+
+```
+atlas-ai/
+├── main.py                    # FastAPI app entry point
+├── requirements.txt           # Python dependencies
+├── docker-compose.yml         # Multi-container setup
+├── alembic/                   # Database migrations
+│   └── versions/              # Migration files
+├── app/
+│   ├── __init__.py
+│   ├── agent/                 # Agent reasoning system (LangGraph)
+│   │   ├── core/              # Graph definition & state
+│   │   ├── nodes/             # Decompose, Thought, SQL, Retrieval, Finish
+│   │   ├── tools/             # Tool implementations
+│   │   └── schemas.py         # Pydantic models
+│   ├── rag/                   # RAG pipeline (ingestion & retrieval)
+│   │   ├── ingest_data_pipline.py    # Document ingestion
+│   │   ├── retrivel_data_pipline.py  # Query retrieval
+│   │   ├── reranker.py               # Cross-encoder reranking
+│   │   ├── steps/                    # Sub-pipelines
+│   │   └── data/                     # Sample data
+│   ├── core/                  # Core modules
+│   │   ├── config.py          # Settings from .env
+│   │   ├── db.py              # Database connection
+│   │   ├── auth.py            # JWT & authentication
+│   │   ├── monitors.py        # Prometheus metrics
+│   │   └── rate_limitizer.py  # Rate limiting
+│   ├── models/                # SQLAlchemy ORM models
+│   │   ├── user.py, tenant.py, runs.py, etc.
+│   │   └── base.py            # Base model class
+│   ├── repositories/          # Data access layer
+│   │   ├── user_repository.py
+│   │   ├── runs_repository.py
+│   │   ├── qdrant.py          # Vector search wrapper
+│   │   └── ...
+│   ├── services/              # Business logic
+│   │   ├── rag_services/      # RAG-related
+│   │   ├── auth_services/     # Authentication
+│   │   └── llm_runner.py      # LLM integration
+│   ├── routes/                # API endpoint handlers
+│   │   ├── agent_route.py
+│   │   ├── query_route.py
+│   │   ├── ingest_rag_route.py
+│   │   └── ...
+│   ├── controllers/           # Request preprocessing
+│   ├── design_pattern/        # Singleton/Factory patterns
+│   ├── celery/                # Celery task configuration
+│   └── files/                 # Upload storage
+├── frontend/                  # React application
+├── monitoring/               # Prometheus & Grafana config
+└── README.md                 # This file
+```
+
+### Common Development Tasks
+
+**Run database migration**:
+```bash
+alembic revision --autogenerate -m "Add new column"
+alembic upgrade head
+```
+
+**Run tests**:
+```bash
+pytest app/ -v
+```
+
+**Format code**:
+```bash
+black app/
+flake8 app/
+```
+
+**View logs**:
+```bash
+docker-compose logs -f backend
+docker-compose logs -f celery
+```
+
+**Access database terminal**:
+```bash
+docker-compose exec postgres psql -U postgres -d atlas_db
+```
+
+**Send test request to agent endpoint**:
+```bash
+curl -X POST http://localhost:8000/api/agent/reason \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What is the total revenue?"}'
 ```
 
 ---
 
-## Metrics Implementation Summary
+## 🔐 Security Considerations
 
-### What Was Fixed
-
-| Issue | Before | After |
-|-------|--------|-------|
-| **Query Metrics** | Not recorded to Prometheus | ✅ Recorded in logging service |
-| **Agent Metrics** | Not recorded to Prometheus | ✅ Recorded in logging service |
-| **Token Tracking** | No Prometheus metrics | ✅ `llm_tokens_consumed` recorded |
-| **Cost Tracking** | Only in database | ✅ Added to Prometheus + database |
-| **Grafana Dashboard** | Empty application panels | ✅ Now shows token/cost data |
-| **Frontend Analytics** | Worked (from DB) | ✅ Still works, now also in Grafana |
-
-### Files Modified
-
-1. **app/services/rag_services/query_logging_service.py**
-   - Added Prometheus metric imports
-   - Added `track_llm_cost()` call
-   - Added token consumption tracking
-
-2. **app/services/rag_services/agent_logging_service.py**
-   - Added agent metric imports
-   - Added `agent_queries_total.inc()`
-   - Added `agent_reasoning_duration_seconds.observe()`
-
-3. **app/routes/query_route.py**
-   - Added `trigger_query_logging` import
-   - Call `trigger_query_logging()` after query completes
-   - Improved documentation
-
-4. **app/routes/agent_route.py**
-   - Enhanced docstrings
-   - Improved error handling
-   - Better logging
-
-5. **app/core/metrics.py**
-   - Added comprehensive docstring
-
-6. **main.py**
-   - Enhanced monitoring documentation
-   - Clearer metric collection explanation
+- **JWT Tokens**: All authenticated endpoints require valid JWT in `Authorization: Bearer <token>` header
+- **Tenant Isolation**: All queries filtered by `tenant_id` automatically
+- **Rate Limiting**: Per-tenant rate limits prevent abuse
+- **SQL Injection Protection**: LLM-generated SQL is validated and executed with parameter binding
+- **CORS**: Only localhost:3000 allowed in development; configure for production
+- **Password Hashing**: Bcrypt with salt for all user passwords
+- **Environment Variables**: Sensitive config stored in `.env` file (never commit)
 
 ---
 
-## Future Enhancements
+## 📞 Support & Troubleshooting
 
-### Planned Features
+### Common Issues
 
-1. **Advanced Reranking**
-   - LLM-based reranking
-   - Cross-lingual reranking
-   - Domain-specific rankers
+**Q: "ConnectionRefusedError" to PostgreSQL**
+- A: Ensure Docker containers are running: `docker-compose ps`
+- Run: `docker-compose up -d postgres`
 
-2. **Extended Agent Capabilities**
-   - Web search integration
-   - PDF parsing tools
-   - Code execution tooling
-   - Multi-document analysis
+**Q: Cache not working**
+- A: Check Redis connection in logs
+- Verify `REDIS_URL` setting in `.env`
+- Restart Redis: `docker-compose restart redis`
 
-3. **Analytics Enhancements**
-   - Real-time dashboards
-   - Anomaly detection
-   - Cost forecasting
-   - Performance regression detection
+**Q: Agent not responding**
+- A: Check Celery worker is running
+- View logs: `docker-compose logs celery`
+- Ensure LangGraph core module loads: `docker-compose logs backend | grep "LangGraph"`
 
-4. **Scalability**
-   - Kubernetes support
-   - Multi-replica deployment
-   - Load balancing
-   - Auto-scaling policies
+**Q: High latency on queries**
+- A: Check Prometheus metrics dashboard
+- Review Qdrant search latency
+- Verify reranker is responding
+- Check cache hit rate
 
-5. **Security**
-   - End-to-end encryption
-   - Audit logging
-   - IP whitelisting
-   - Rate limiting per tenant
+**Q: Out of memory errors**
+- A: Increase Docker container memory limits
+- Reduce batch size in ingestion pipeline
+- Clear Redis cache: `docker-compose exec redis redis-cli FLUSHDB`
 
-6. **Model Support**
-   - LLaMA integration
-   - GPT-4 compatibility
-   - Anthropic Claude support
-   - Local model switching
+### Useful Debug Commands
 
----
+```bash
+# Check all services running
+docker-compose ps
 
-## Support & Contributions
+# View detailed logs
+docker-compose logs -f --tail=100 backend
 
-### Getting Help
+# Access database
+docker-compose exec postgres psql -U postgres -d atlas_db
 
-1. Check [Troubleshooting](#troubleshooting) section
-2. Review logs: `docker logs <service-name>`
-3. Check Prometheus: http://localhost:9091
-4. Check Grafana: http://localhost:3100
-5. Check MLflow: http://localhost:5000
+# Check Redis cache
+docker-compose exec redis redis-cli
+> KEYS "*"
+> GET <key>
 
-### Contributing
+# Test Qdrant connection
+curl http://localhost:6333/health
 
-Contributions are welcome! Areas to contribute:
-
-- New reranking strategies
-- Agent tools
-- Monitoring improvements
-- Documentation
-- Bug fixes
-- Performance optimizations
+# Verify Prometheus scraping
+curl http://localhost:9090/api/v1/targets
+```
 
 ---
 
-## License
+## 📚 Additional Resources
 
-This project is proprietary software. All rights reserved.
-
----
-
-## Architecture Decision Records
-
-### Why Prometheus + Grafana?
-
-- **Prometheus**: Time-series database, perfect for metrics
-- **Grafana**: Beautiful dashboards, alerting support
-- **MLflow**: Experiment tracking for model development
-- **Three-pronged approach**: Real-time (Prometheus), Historical (MLflow), Reporting (Grafana)
-
-### Why Background Tasks for Logging?
-
-- Metrics recording (DB + Prometheus) is synchronous and fast (~10ms)
-- Response doesn't block on logging
-- Database writes are reliable with retries
-- Metrics are available immediately
-
-### Why Metrics at Query Completion?
-
-- All data is available (latency, tokens, cost)
-- Single point of truth
-- No need for distributed tracing
-- Simple and efficient
+- [System Diagrams](SYSTEM_DIAGRAMS.md) - Visual architecture & data flows
+- [RAG Module](app/rag/README.md) - Document ingestion & retrieval details
+- [Agent Module](app/agent/README.md) - Reasoning workflow documentation
+- [Core Module](app/core/README.md) - Configuration & monitoring setup
+- [Database Schema](alembic/versions/) - Migration history & schema
+- [API Documentation](http://localhost:8000/docs) - Swagger UI (when running)
 
 ---
 
-**Last Updated**: March 2, 2026
+## 📝 License
 
-**Status**: ✅ Production Ready
+[Your License Here]
 
-**Metrics System**: ✅ Fully Functional
+---
 
+**Last Updated**: March 2026  
+**Maintainer**: Atlas AI Team

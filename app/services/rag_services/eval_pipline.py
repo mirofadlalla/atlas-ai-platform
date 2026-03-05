@@ -4,6 +4,11 @@ from app.celery.celery_config import celery_app
 import mlflow
 from datetime import datetime
 from mlflow.tracking import MlflowClient
+import os
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 @celery_app.task(bind=True,
                  auto_retry_for=(Exception,),
@@ -84,4 +89,48 @@ def evaluate_task(self, tenant_id: str, path: str, runs: int = 2, run_id: str = 
             pass
         
         # إعادة المحاولة
+        self.retry(exc=e)
+
+@celery_app.task(bind=True,
+                 auto_retry_for=(Exception,),
+                 retry_kwargs={'max_retries': 3, 'countdown': 30},
+                 retry_backoff=True,
+                 retry_jitter=True,
+                 name="app.services.rag_services.eval_pipline.generate_eval_dataset_task"
+                )
+def generate_eval_dataset_task(self, tenant_id: str, max_chunks: int = 30):
+    from app.rag.evaluation.generate_eval_dataset import fetch_points, build_llm, build_dataset
+    
+    logger.info(f"Task started: generate_eval_dataset for tenant {tenant_id}")
+    try:
+        points = fetch_points(tenant_id=tenant_id, max_chunks=max_chunks)
+        if not points:
+            error_msg = f"No points found for tenant {tenant_id}!"
+            logger.error(error_msg)
+            return {"status": "failed", "error": error_msg}
+
+        llm = build_llm()
+        dataset = build_dataset(points, llm)
+        
+        if not dataset:
+            error_msg = "Dataset is empty — all LLM calls may have failed."
+            logger.error(error_msg)
+            return {"status": "failed", "error": error_msg}
+        
+        upload_dir = Path("app/files/eval_files")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        out_path = upload_dir / f"{tenant_id}_generated_eval_dataset.json"
+        
+        with out_path.open("w", encoding="utf-8") as f:
+            json.dump(dataset, f, indent=2, ensure_ascii=False)
+            
+        logger.info(f"✅ Saved {len(dataset)} QA samples to: {out_path}")
+        
+        return {
+            "status": "success", 
+            "message": f"Generated dataset with {len(dataset)} samples",
+            "file_path": str(out_path)
+        }
+    except Exception as e:
+        logger.error(f"Error generating eval dataset: {e}")
         self.retry(exc=e)

@@ -85,7 +85,10 @@
       "id": 1,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -168,7 +171,11 @@
       "id": 2,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "p99"],
+          "calcs": [
+            "mean",
+            "max",
+            "p99"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -233,7 +240,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "showThresholdLabels": false,
@@ -289,7 +298,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "showThresholdLabels": false,
@@ -349,7 +360,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "showThresholdLabels": false,
@@ -429,7 +442,10 @@
       "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -512,7 +528,10 @@
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -601,7 +620,10 @@
       "id": 8,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -690,7 +712,10 @@
       "id": 9,
       "options": {
         "legend": {
-          "calcs": ["mean", "total"],
+          "calcs": [
+            "mean",
+            "total"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -774,7 +799,9 @@
       "id": 10,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -858,7 +885,10 @@
       "id": 11,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -951,7 +981,9 @@
       "id": 12,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -1035,7 +1067,9 @@
       "id": 13,
       "options": {
         "legend": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -1098,7 +1132,9 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "values": ["value"]
+          "values": [
+            "value"
+          ]
         },
         "pieType": "pie",
         "tooltip": {
@@ -1116,11 +1152,82 @@
       ],
       "title": "HTTP Status Code Distribution",
       "type": "piechart"
+    },
+    {
+      "id": 15,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 48
+      },
+      "type": "timeseries",
+      "title": "LLM Cache Hit Rate (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(atlas_cache_hits_total[5m])) / (sum(rate(atlas_cache_hits_total[5m])) + sum(rate(atlas_cache_misses_total[5m]))) * 100",
+          "refId": "A",
+          "legendFormat": "Hit Rate"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 48
+      },
+      "type": "timeseries",
+      "title": "Avg Docs Retrieved per Query",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(atlas_retrieved_chunks_count_sum[5m]) / rate(atlas_retrieved_chunks_count_count[5m])",
+          "refId": "A",
+          "legendFormat": "Avg Docs"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 48
+      },
+      "type": "timeseries",
+      "title": "Avg Agent Reasoning Steps",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(atlas_agent_reasoning_steps_count_sum[5m]) / rate(atlas_agent_reasoning_steps_count_count[5m])",
+          "refId": "A",
+          "legendFormat": "Avg Steps"
+        }
+      ]
     }
   ],
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["atlas", "monitoring", "rag", "performance"],
+  "tags": [
+    "atlas",
+    "monitoring",
+    "rag",
+    "performance"
+  ],
   "templating": {
     "list": []
   },

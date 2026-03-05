@@ -249,6 +249,26 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  async generateEvalDataset(maxChunks = 30) {
+    const formData = new FormData();
+    formData.append('max_chunks', maxChunks);
+    
+    const user = JSON.parse(localStorage.getItem('user'));
+    formData.append('tenant_id', user.tenant_id);
+
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${this.baseURL}/eval/generate_dataset`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'current-user': user.id,
+        'user-role': user.role,
+      },
+      body: formData,
+    });
+    return this.handleResponse(response);
+  }
+
   // Invitation endpoints
   async sendInvitation(email, tenantId) {
     const response = await fetch(`${this.baseURL}/auth/invitations/send`, {
